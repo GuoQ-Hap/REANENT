@@ -1,0 +1,12 @@
+[project]
+name = "pmc-inventory-supply-chain-agent"
+version = "0.1.0"
+description = "Framework scaffold for a PMC inventory supply chain control agent."
+requires-python = ">=3.10"
+dependencies = ["pymysql>=1.1"]
+
+[project.optional-dependencies]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+
+[tool.setuptools.packages.find]
+where = ["src"]

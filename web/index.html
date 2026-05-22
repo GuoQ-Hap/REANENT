@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PMC 智能体测试控制台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <h1>PMC 智能体测试控制台</h1>
+          <p>模块测试、业务场景、状态流转和运行输出的统一入口</p>
+        </div>
+        <div class="top-actions">
+          <label class="model-toggle">
+            <input id="useRealModel" type="checkbox" />
+            <span>业务场景使用真实模型</span>
+          </label>
+          <label class="model-picker">
+            <span>模型</span>
+            <select id="modelSelect"></select>
+          </label>
+          <input id="customModel" class="model-input" type="text" placeholder="自定义模型名" />
+          <button id="runAll" class="primary">运行全部测试</button>
+        </div>
+      </header>
+
+      <section class="layout">
+        <aside class="sidebar">
+          <div class="panel">
+            <div class="panel-title">测试逻辑</div>
+            <div id="contractList" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">模块测试</div>
+            <div id="testList" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">业务场景</div>
+            <div id="scenarioList" class="list"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-title">模型调试</div>
+            <div id="llmModuleList" class="list"></div>
+          </div>
+        </aside>
+
+        <section class="workspace">
+          <div class="toolbar">
+            <div>
+              <div id="statusLabel" class="status">等待操作</div>
+              <div id="subLabel" class="sub">选择一个模块测试或业务场景开始。</div>
+            </div>
+          </div>
+
+          <div class="split">
+            <section class="panel output-panel">
+              <div class="panel-title">运行输出</div>
+              <div id="output" class="output"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-title">状态流转</div>
+              <div id="stateCheck" class="state-check"></div>
+              <div id="stateFlow" class="state-flow"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

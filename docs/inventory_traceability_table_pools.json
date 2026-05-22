@@ -1,0 +1,3371 @@
+{
+  "source_files": [
+    "D:\\laydown\\ric-train-master\\LDA\\data\\schema_index.json",
+    "D:\\laydown\\ric-train-master\\LDA\\data\\schema_raw.json"
+  ],
+  "scope": "PMC 库存全链路溯源表池规划",
+  "notes": [
+    "ads_lingxing_all_warehouse_new_v1 为主查询宽表，用户说明更新逻辑为一月一更，适合作为月度基准快照，不适合承载实时变动追踪。",
+    "分类是首期 connector 选表规划，不等于永久弃用；随着问题范围扩大可从 possibly_useful 提升到 directly_used。",
+    "directly_used 侧重库存、预测、采购、发货、物流、销售需求、产品/店铺映射。",
+    "真实数据库探测补充：schema 文件未完整覆盖 `ads_lingxing_all_warehouse_new_v1`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`，但这些表已在 dw_leang 中确认存在，并强制纳入主要表池。"
+  ],
+  "pool_counts": {
+    "main": 8,
+    "directly_used": 113,
+    "possibly_useful": 175,
+    "not_needed": 65
+  },
+  "pools": {
+    "main": {
+      "ads_lingxing_sc_sales_daily_new": {
+        "reason": "销售日报；用于真实销量、近 7/30 天需求和预测偏差核对。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 销售 - 日度 - (new版本)",
+        "column_count": 128
+      },
+      "ads_lingxing_stocking_rules": {
+        "reason": "ADS 层备货规则；作为规则宽表或 temp 表口径的对照。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 补货/备货 - 规则",
+        "column_count": 26
+      },
+      "dwd_lingxing_fba_warehouse_detail": {
+        "reason": "FBA 库存明细；用于 FBA 可售、不可售、预留、在途状态核对。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 仓库/仓储 - 明细",
+        "column_count": 72
+      },
+      "dwd_lingxing_inventory_details": {
+        "reason": "国内仓库存明细；用于本地仓可用、锁定、在途、质检和不良品库存。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 库存",
+        "column_count": 26
+      },
+      "temp_lingxing_stocking_rules": {
+        "reason": "临时/现行备货规则；用于安全库存、时效、补货频率等规则口径。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 补货/备货 - 规则",
+        "column_count": 45
+      },
+      "ads_lingxing_all_warehouse_new_v1": {
+        "reason": "库存全链路溯源主查询宽表；用户说明为一月一更，适合做月度基准快照和主入口。注意它不适合单独承担实时库存变动追踪。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP全部仓库/仓储主宽表 v1，真实库已确认存在。",
+        "column_count": 165
+      },
+      "dim_inventory_forecast_v1": {
+        "reason": "采购侧未来库存预测；用于采购验证、缺口测算和未来库存曲线，真实库已确认存在。",
+        "categories": [
+          "库存管理",
+          "数据预测"
+        ],
+        "layer": "DIM-维度/预测层",
+        "description": "采购侧库存预测 v1。",
+        "column_count": 7
+      },
+      "dim_inventory_forecast_v1_fh": {
+        "reason": "发货侧未来库存预测；用于发货验证和发货窗口复算，真实库已确认存在。",
+        "categories": [
+          "库存管理",
+          "数据预测"
+        ],
+        "layer": "DIM-维度/预测层",
+        "description": "发货侧库存预测 v1。",
+        "column_count": 7
+      }
+    },
+    "directly_used": {
+      "ads_lingxing_all_warehouse_new": {
+        "reason": "主宽表历史/new 版本，可用于和 v1 比较字段口径。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 全部 - 仓库/仓储 - (new版本)",
+        "column_count": 155
+      },
+      "ads_lingxing_all_warehouse_new_sh": {
+        "reason": "主宽表 SH 版本，可用于区域或上海口径核对。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 全部 - 仓库/仓储 - (new版本)",
+        "column_count": 156
+      },
+      "ads_lingxing_all_warehouse_new_sh_v1": {
+        "reason": "主宽表 SH v1 版本，可用于区域或上海口径核对。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 全部 - 仓库/仓储 - (new版本) - (v1版本)",
+        "column_count": 166
+      },
+      "ads_lingxing_flz": {
+        "reason": "FBA 库存/库存流水 ADS 表。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP",
+        "column_count": 21
+      },
+      "ads_lingxing_sc_sales_daily": {
+        "reason": "销售日报旧表，可用于口径回溯。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 销售 - 日度",
+        "column_count": 119
+      },
+      "ads_lingxing_sc_sales_daily2": {
+        "reason": "销售日报旧/中间表。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 销售",
+        "column_count": 119
+      },
+      "ads_logistics_monitoring": {
+        "reason": "物流监控。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "物流",
+        "column_count": 16
+      },
+      "ads_logistics_monitoring_sj": {
+        "reason": "物流监控时间/事件口径。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "物流",
+        "column_count": 20
+      },
+      "ads_m_firstleg_shipping": {
+        "reason": "头程发货 ADS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "物流运输",
+        "column_count": 44
+      },
+      "ads_rpt_inventory_sales_health_weekly": {
+        "reason": "库存销售健康周报，可用于风险等级和周度趋势对照。",
+        "categories": [
+          "销售分析",
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "库存 - 销售 - 健康度 - 周度",
+        "column_count": 35
+      },
+      "all_warehouse_mv": {
+        "reason": "库存宽表物化视图/汇总视图，可用于性能优化或宽表口径核对。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "全部 - 仓库/仓储",
+        "column_count": 26
+      },
+      "dim_caigoujihua_weekly": {
+        "reason": "周度采购计划。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "周度",
+        "column_count": 34
+      },
+      "dim_fahuojihua_weekly": {
+        "reason": "周度发货计划。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "周度",
+        "column_count": 33
+      },
+      "dim_inventory_forecast": {
+        "reason": "库存预测老版本，可用于追溯口径变化。",
+        "categories": [
+          "库存管理",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "库存 - 预测",
+        "column_count": 7
+      },
+      "dim_inventory_forecast2": {
+        "reason": "库存预测中间/旧版本，可用于追溯口径变化。",
+        "categories": [
+          "库存管理",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "库存",
+        "column_count": 11
+      },
+      "dim_inventory_forecast_bd": {
+        "reason": "BD 口径预测表，可用于特殊渠道或 BD 口径核对。",
+        "categories": [
+          "库存管理",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "库存 - 预测",
+        "column_count": 6
+      },
+      "dim_lingxing_account_mapping": {
+        "reason": "账号/店铺映射。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 账号 - 映射关系",
+        "column_count": 2
+      },
+      "dim_lingxing_daily_sales_estimates": {
+        "reason": "日销量预测。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 日度 - 销售",
+        "column_count": 212
+      },
+      "dim_lingxing_kucun_num": {
+        "reason": "库存数量维表/汇总表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 数量",
+        "column_count": 8
+      },
+      "dim_lingxing_lot_tracking_new": {
+        "reason": "批次跟踪。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 追踪 - (new版本)",
+        "column_count": 15
+      },
+      "dim_lingxing_planned_shipment_quantity_new": {
+        "reason": "计划发货量。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 发货/物流 - 数量 - (new版本)",
+        "column_count": 4
+      },
+      "dim_lingxing_product": {
+        "reason": "产品维表。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 产品",
+        "column_count": 11
+      },
+      "dim_lingxing_product_info": {
+        "reason": "产品信息维表。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 产品 - 信息",
+        "column_count": 66
+      },
+      "dim_lingxing_sales_estimates": {
+        "reason": "销量预测维表。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售",
+        "column_count": 18
+      },
+      "dim_lingxing_sales_estimates_everyday_v1_incr": {
+        "reason": "每日销量预测 v1 增量。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - (v1版本) - 增量",
+        "column_count": 11
+      },
+      "dim_lingxing_sales_estimates_v1": {
+        "reason": "销量预测 v1。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - (v1版本)",
+        "column_count": 18
+      },
+      "dim_lingxing_stocking_rules": {
+        "reason": "领星备货规则维表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 补货/备货 - 规则",
+        "column_count": 51
+      },
+      "dim_lingxing_stocking_rules2": {
+        "reason": "领星备货规则版本表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 补货/备货",
+        "column_count": 51
+      },
+      "dim_lingxing_stocking_rules_v1": {
+        "reason": "领星备货规则 v1。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 补货/备货 - 规则 - (v1版本)",
+        "column_count": 51
+      },
+      "dim_lingxing_store": {
+        "reason": "店铺维表。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 店铺",
+        "column_count": 12
+      },
+      "dim_lingxing_warehouse_analysis": {
+        "reason": "仓库分析维表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 仓库/仓储 - 分析",
+        "column_count": 138
+      },
+      "dim_lingxing_warehouse_mapping": {
+        "reason": "仓库映射表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 仓库/仓储 - 映射关系",
+        "column_count": 2
+      },
+      "dim_msku_dimension_detailed": {
+        "reason": "MSKU 维度明细。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "MSKU(商户SKU)",
+        "column_count": 11
+      },
+      "dim_platform_store": {
+        "reason": "平台店铺维表。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "店铺",
+        "column_count": 6
+      },
+      "dwd_lingxing_awd_inbound_plan_list_incr": {
+        "reason": "AWD 入库计划 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊AWD仓储 - 入库 - 计划 - 列表 - 增量",
+        "column_count": 26
+      },
+      "dwd_lingxing_awd_warehouse_detail": {
+        "reason": "AWD 仓库存明细。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊AWD仓储 - 仓库/仓储 - 明细",
+        "column_count": 40
+      },
+      "dwd_lingxing_fba_report_shipment_detail_incr": {
+        "reason": "FBA 发货报告明细 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 报告 - 发货/物流 - 明细 - 增量",
+        "column_count": 52
+      },
+      "dwd_lingxing_fba_report_shipment_list_incr": {
+        "reason": "FBA 发货报告主表 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 报告 - 发货/物流 - 列表 - 增量",
+        "column_count": 38
+      },
+      "dwd_lingxing_fba_shipment_plan_lists_incr": {
+        "reason": "FBA 发货计划 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 发货/物流 - 计划 - 增量",
+        "column_count": 55
+      },
+      "dwd_lingxing_inbound_shipment_boxes_incr": {
+        "reason": "入库箱规/箱明细 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 增量",
+        "column_count": 27
+      },
+      "dwd_lingxing_inbound_shipment_detail_incr": {
+        "reason": "入库/货件明细 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 明细 - 增量",
+        "column_count": 133
+      },
+      "dwd_lingxing_inbound_shipment_list_incr": {
+        "reason": "入库/货件主表 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 列表 - 增量",
+        "column_count": 49
+      },
+      "dwd_lingxing_inventory_ledger_summary_incr": {
+        "reason": "库存流水/台账汇总，用于库存变动追溯。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 库存 - 台账 - 统计/汇总 - 增量",
+        "column_count": 25
+      },
+      "dwd_lingxing_inventory_turnover_incr": {
+        "reason": "库存周转明细/指标，用于滞销和周转分析。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 库存 - 周转 - 增量",
+        "column_count": 44
+      },
+      "dwd_lingxing_local_inventory_product_list_incr": {
+        "reason": "本地库存商品列表 DWD。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 本地仓 - 库存 - 产品 - 列表 - 增量",
+        "column_count": 30
+      },
+      "dwd_lingxing_owms_inbound_list_incr": {
+        "reason": "海外仓入库 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 列表 - 增量",
+        "column_count": 30
+      },
+      "dwd_lingxing_purchase_order_item_list_incr": {
+        "reason": "采购订单明细 DWD，用于采购在途和交期追溯。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 采购 - 订单 - 列表 - 增量",
+        "column_count": 35
+      },
+      "dwd_lingxing_purchase_order_list_incr": {
+        "reason": "采购订单主表 DWD。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 采购 - 订单 - 列表 - 增量",
+        "column_count": 59
+      },
+      "dwd_lingxing_purchase_plans_incr": {
+        "reason": "采购计划 DWD。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 采购 - 增量",
+        "column_count": 42
+      },
+      "dwd_lingxing_purchase_receipt_order_incr": {
+        "reason": "采购收货 DWD。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 采购 - 订单 - 增量",
+        "column_count": 38
+      },
+      "dwd_lingxing_sc_warehouse": {
+        "reason": "仓库信息 DWD。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 仓库/仓储",
+        "column_count": 12
+      },
+      "dwd_lingxing_sta_inbound_plan_detail_incr": {
+        "reason": "STA 入库计划明细 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 计划 - 明细 - 增量",
+        "column_count": 36
+      },
+      "dwd_lingxing_sta_inbound_plan_list_incr": {
+        "reason": "STA 入库计划主表 DWD。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 计划 - 列表 - 增量",
+        "column_count": 12
+      },
+      "dws_purchase_allocation": {
+        "reason": "采购分配 DWS。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "DWS-汇总数据层",
+        "description": "采购 - 分配",
+        "column_count": 14
+      },
+      "dws_purchase_attribution_detailed": {
+        "reason": "采购归因明细。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "DWS-汇总数据层",
+        "description": "采购 - 归因",
+        "column_count": 22
+      },
+      "dws_shipment_attribution_detailed": {
+        "reason": "发货归因明细。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWS-汇总数据层",
+        "description": "发货/物流 - 归因",
+        "column_count": 28
+      },
+      "fba_shipment_report": {
+        "reason": "FBA 发货报告汇总。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "亚马逊FBA物流 - 发货/物流 - 报告",
+        "column_count": 26
+      },
+      "fba_warehouse_qty_ratio": {
+        "reason": "FBA 仓库数量比例。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "亚马逊FBA物流 - 仓库/仓储",
+        "column_count": 39
+      },
+      "fba_warehouse_summary": {
+        "reason": "FBA 仓库汇总。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "亚马逊FBA物流 - 仓库/仓储 - 统计/汇总",
+        "column_count": 19
+      },
+      "fba_warehouse_to_sales_ratio": {
+        "reason": "FBA 库存销量比。",
+        "categories": [
+          "销售分析",
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "亚马逊FBA物流 - 仓库/仓储 - 销售",
+        "column_count": 49
+      },
+      "feishu_first_leg_shipment_records": {
+        "reason": "飞书头程发货记录。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "飞书 - 发货/物流",
+        "column_count": 63
+      },
+      "feishu_first_leg_tracking_records": {
+        "reason": "飞书头程跟踪记录。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "飞书 - 追踪",
+        "column_count": 6
+      },
+      "forecast_snapshot": {
+        "reason": "预测快照。",
+        "categories": [
+          "数据预测"
+        ],
+        "layer": "业务表",
+        "description": "预测",
+        "column_count": 15
+      },
+      "in_transit_shipment": {
+        "reason": "在途发货。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "发货/物流",
+        "column_count": 50
+      },
+      "in_transit_shipment_records": {
+        "reason": "在途发货记录。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "发货/物流",
+        "column_count": 23
+      },
+      "in_transit_shipment_tmp": {
+        "reason": "在途发货临时表。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "发货/物流 - 临时",
+        "column_count": 19
+      },
+      "leang_lst_asin_mapping": {
+        "reason": "ASIN 映射。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - ASIN(亚马逊产品编号) - 映射关系",
+        "column_count": 11
+      },
+      "leang_product_info": {
+        "reason": "产品信息补充表。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 产品 - 信息",
+        "column_count": 68
+      },
+      "leang_western_sku_mapping": {
+        "reason": "SKU 映射。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - SKU(库存单位) - 映射关系",
+        "column_count": 4
+      },
+      "local_inventory_details": {
+        "reason": "本地库存明细补充表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "本地仓 - 库存",
+        "column_count": 14
+      },
+      "ods_lingxing_awd_inbound_plan_list": {
+        "reason": "AWD 入库计划 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊AWD仓储 - 入库 - 计划 - 列表",
+        "column_count": 26
+      },
+      "ods_lingxing_awd_warehouse_detail": {
+        "reason": "AWD 仓库存 ODS。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊AWD仓储 - 仓库/仓储 - 明细",
+        "column_count": 40
+      },
+      "ods_lingxing_fba_report_shipment_detail": {
+        "reason": "FBA 发货报告明细 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 报告 - 发货/物流 - 明细",
+        "column_count": 41
+      },
+      "ods_lingxing_fba_report_shipment_list": {
+        "reason": "FBA 发货报告主表 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 报告 - 发货/物流 - 列表",
+        "column_count": 38
+      },
+      "ods_lingxing_fba_shipment_plan_lists": {
+        "reason": "FBA 发货计划 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 发货/物流 - 计划",
+        "column_count": 55
+      },
+      "ods_lingxing_fba_warehouse_detail": {
+        "reason": "FBA 库存 ODS 原始表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 仓库/仓储 - 明细",
+        "column_count": 72
+      },
+      "ods_lingxing_inbound_shipment_boxes": {
+        "reason": "入库箱明细 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 发货/物流",
+        "column_count": 27
+      },
+      "ods_lingxing_inbound_shipment_detail": {
+        "reason": "入库/货件明细 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 明细",
+        "column_count": 133
+      },
+      "ods_lingxing_inbound_shipment_list": {
+        "reason": "入库/货件主表 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 列表",
+        "column_count": 49
+      },
+      "ods_lingxing_inventory_details": {
+        "reason": "国内仓库存 ODS 原始表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 库存",
+        "column_count": 26
+      },
+      "ods_lingxing_inventory_ledger_summary": {
+        "reason": "库存台账 ODS。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 库存 - 台账 - 统计/汇总",
+        "column_count": 26
+      },
+      "ods_lingxing_inventory_turnover": {
+        "reason": "库存周转 ODS。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 库存 - 周转",
+        "column_count": 44
+      },
+      "ods_lingxing_local_inventory_product_list": {
+        "reason": "本地库存商品列表 ODS。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 本地仓 - 库存 - 产品 - 列表",
+        "column_count": 30
+      },
+      "ods_lingxing_lot_tracking": {
+        "reason": "批次跟踪 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 追踪",
+        "column_count": 20
+      },
+      "ods_lingxing_owms_inbound_list": {
+        "reason": "海外仓入库 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 列表",
+        "column_count": 30
+      },
+      "ods_lingxing_planned_shipment_quantity": {
+        "reason": "计划发货量 ODS。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 发货/物流 - 数量",
+        "column_count": 5
+      },
+      "ods_lingxing_purchase_order_item_list": {
+        "reason": "采购订单明细 ODS。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 采购 - 订单 - 列表",
+        "column_count": 35
+      },
+      "ods_lingxing_purchase_order_list": {
+        "reason": "采购订单主表 ODS。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 采购 - 订单 - 列表",
+        "column_count": 59
+      },
+      "ods_lingxing_purchase_plans": {
+        "reason": "采购计划 ODS。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 采购",
+        "column_count": 42
+      },
+      "ods_lingxing_purchase_receipt_order": {
+        "reason": "采购收货 ODS。",
+        "categories": [
+          "销售分析",
+          "采购管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 采购 - 订单",
+        "column_count": 38
+      },
+      "ods_lingxing_sales_estimates_v1": {
+        "reason": "销量预测 ODS v1。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售 - (v1版本)",
+        "column_count": 20
+      },
+      "ods_lingxing_sc_store": {
+        "reason": "店铺 ODS。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 店铺",
+        "column_count": 12
+      },
+      "ods_lingxing_sc_warehouse": {
+        "reason": "仓库信息 ODS。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 仓库/仓储",
+        "column_count": 12
+      },
+      "ods_lingxing_stocking_rules": {
+        "reason": "备货规则 ODS 原始表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 补货/备货 - 规则",
+        "column_count": 52
+      },
+      "ods_lingxing_stocking_rules_v1": {
+        "reason": "备货规则 ODS v1 原始表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 补货/备货 - 规则 - (v1版本)",
+        "column_count": 52
+      },
+      "stock_monitor_new": {
+        "reason": "库存监控新表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "库存 - 监控 - (new版本)",
+        "column_count": 5
+      },
+      "stock_monitor_tmp": {
+        "reason": "库存监控临时表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "库存 - 监控 - 临时",
+        "column_count": 213
+      },
+      "tem_lingxing_stocking_rules": {
+        "reason": "备货规则临时表，可能是 temp_lingxing_stocking_rules 的历史拼写。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "业务表",
+        "description": "领星ERP - 补货/备货 - 规则",
+        "column_count": 32
+      },
+      "temp_batch_kucun": {
+        "reason": "批次库存临时表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 9
+      },
+      "temp_caigoushiji": {
+        "reason": "采购实际/临时表。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 14
+      },
+      "temp_current_inventory": {
+        "reason": "当前库存临时表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 库存",
+        "column_count": 3
+      },
+      "temp_fahuojihua_weekly": {
+        "reason": "周度发货计划临时表。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 周度",
+        "column_count": 28
+      },
+      "temp_fahuoshiji": {
+        "reason": "发货实际临时表。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 11
+      },
+      "temp_kucun_fnsku_zgb": {
+        "reason": "FNSKU 库存临时/中间表。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 55
+      },
+      "temp_kucun_sku_zgb": {
+        "reason": "SKU 库存临时/中间表。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SKU(库存单位)",
+        "column_count": 31
+      },
+      "temp_kucunlinshi_a": {
+        "reason": "库存临时表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 10
+      },
+      "temp_lingxing_flz": {
+        "reason": "FBA 库存/库存流水相关临时表。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 18
+      },
+      "temp_lingxing_fnsku_sales_forecast": {
+        "reason": "FNSKU 销量预测临时表。",
+        "categories": [
+          "销售分析",
+          "产品管理",
+          "数据预测"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - FNSKU(亚马逊配送网络SKU) - 销售 - 预测",
+        "column_count": 10
+      },
+      "temp_lingxing_kucun_num": {
+        "reason": "库存数量临时表。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 数量",
+        "column_count": 99
+      },
+      "temp_purchase_quantity_temp_v1": {
+        "reason": "采购数量临时结果。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 采购 - 数量 - 临时 - (v1版本)",
+        "column_count": 167
+      },
+      "temp_purchase_quantity_temptwo": {
+        "reason": "采购数量临时结果。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 采购 - 数量",
+        "column_count": 162
+      },
+      "temp_status_fahuo": {
+        "reason": "发货状态临时表。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 状态",
+        "column_count": 5
+      },
+      "vw_purchase_decision_support": {
+        "reason": "采购决策支持视图。",
+        "categories": [
+          "采购管理"
+        ],
+        "layer": "业务表",
+        "description": "采购",
+        "column_count": 7
+      }
+    },
+    "possibly_useful": {
+      "ads_lingxing_return_analysis": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 退货/退款 - 分析",
+        "column_count": 26
+      },
+      "ads_lingxing_return_analysis_pr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 退货/退款 - 分析",
+        "column_count": 26
+      },
+      "ads_multichannel_fc": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "ads_multichannel_fc",
+        "column_count": 39
+      },
+      "ads_return_notes": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "退货/退款",
+        "column_count": 37
+      },
+      "ads_return_notes1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "退货/退款",
+        "column_count": 50
+      },
+      "ads_rpt_weekly_sales_checkls": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "周度 - 销售",
+        "column_count": 7
+      },
+      "ads_status_juhe": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "状态",
+        "column_count": 24
+      },
+      "ads_temp_base_dates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "临时",
+        "column_count": 168
+      },
+      "ads_week_huojians": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "ads_week_huojians",
+        "column_count": 15
+      },
+      "ads_xiyou_last_mile_summary_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 统计/汇总 - 临时",
+        "column_count": 7
+      },
+      "ads_xiyou_logistics_claim_expenses_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 物流 - 索赔 - 临时",
+        "column_count": 22
+      },
+      "ads_xiyou_logistics_supplement_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 物流 - 临时",
+        "column_count": 215
+      },
+      "ads_xiyou_return_logistics_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理",
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 退货/退款 - 物流 - 临时",
+        "column_count": 69
+      },
+      "ads_xiyou_return_order_detail_temp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "退货退款"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 退货/退款 - 订单 - 明细 - 临时",
+        "column_count": 28
+      },
+      "ads_xiyou_self_delivery_orders_temp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 临时",
+        "column_count": 162
+      },
+      "ads_xiyou_shipment_order_details_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 发货/物流 - 订单 - 临时",
+        "column_count": 259
+      },
+      "ads_xiyou_warehouse_claim_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "西邮物流 - 仓库/仓储 - 索赔 - 临时",
+        "column_count": 26
+      },
+      "dim_BI_ASIN_demo": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "ASIN(亚马逊产品编号)",
+        "column_count": 13
+      },
+      "dim_Quality_reference": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "质量",
+        "column_count": 23
+      },
+      "dim_Quality_reference_with_supplier": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "质量 - 供应商",
+        "column_count": 4
+      },
+      "dim_Quality_reference_with_supplier2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "质量",
+        "column_count": 5
+      },
+      "dim_activity_schedule": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "活动 - 排期",
+        "column_count": 15
+      },
+      "dim_calendar_table": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "日历",
+        "column_count": 3
+      },
+      "dim_fs_specialorder": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DIM-维度表",
+        "description": "dim_fs_specialorder",
+        "column_count": 12
+      },
+      "dim_headway_bill_incr_a": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "增量",
+        "column_count": 46
+      },
+      "dim_high_return_rate_tag": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "DIM-维度表",
+        "description": "退货/退款 - 汇率/比率",
+        "column_count": 16
+      },
+      "dim_high_return_rate_tag_new": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "DIM-维度表",
+        "description": "退货/退款 - 汇率/比率 - (new版本)",
+        "column_count": 16
+      },
+      "dim_lingxing_daily_sales_estimates_tmp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 日度 - 销售 - 临时",
+        "column_count": 164
+      },
+      "dim_lingxing_fnsku_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - FNSKU(亚马逊配送网络SKU) - 数量",
+        "column_count": 10
+      },
+      "dim_lingxing_local_inventory_product_info": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 本地仓 - 库存 - 产品 - 信息",
+        "column_count": 54
+      },
+      "dim_lingxing_mp_seller_list": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 卖家 - 列表",
+        "column_count": 10
+      },
+      "dim_lingxing_product_info_monthly": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 产品 - 信息 - 月度",
+        "column_count": 67
+      },
+      "dim_lingxing_product_sale_date": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 产品 - 销售 - 日期",
+        "column_count": 74
+      },
+      "dim_lingxing_sales_estimates_everyday_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - 增量",
+        "column_count": 11
+      },
+      "dim_lingxing_sales_estimates_everyday_incr2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售",
+        "column_count": 11
+      },
+      "dim_lingxing_sales_estimates_everyday_incr3": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售",
+        "column_count": 11
+      },
+      "dim_lingxing_sales_estimates_monthly": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - 月度",
+        "column_count": 19
+      },
+      "dim_lingxing_sales_estimates_monthly_v1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - 月度 - (v1版本)",
+        "column_count": 19
+      },
+      "dim_lingxing_sales_estimates_tmp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售 - 临时",
+        "column_count": 18
+      },
+      "dim_lingxing_sales_estimates_tmp1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 销售",
+        "column_count": 18
+      },
+      "dim_lingxing_sc_market": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 市场/站点",
+        "column_count": 7
+      },
+      "dim_pub_china_region": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "区域",
+        "column_count": 7
+      },
+      "dim_pub_date": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "日期",
+        "column_count": 10
+      },
+      "dim_redundant_list": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "冗余/滞销 - 列表",
+        "column_count": 2
+      },
+      "dim_redundant_list_new": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DIM-维度表",
+        "description": "冗余/滞销 - 列表 - (new版本)",
+        "column_count": 2
+      },
+      "dim_xiyou_logistics_claim_expenses": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 物流 - 索赔",
+        "column_count": 19
+      },
+      "dim_xiyou_logistics_supplement": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 物流",
+        "column_count": 141
+      },
+      "dim_xiyou_return_logistics": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理",
+          "退货退款"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 退货/退款 - 物流",
+        "column_count": 66
+      },
+      "dim_xiyou_return_order_detail": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "退货退款"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 退货/退款 - 订单 - 明细",
+        "column_count": 25
+      },
+      "dim_xiyou_self_delivery_orders": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流",
+        "column_count": 88
+      },
+      "dim_xiyou_shipment_order_details": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 发货/物流 - 订单",
+        "column_count": 258
+      },
+      "dim_xiyou_warehouse_claim": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "西邮物流 - 仓库/仓储 - 索赔",
+        "column_count": 23
+      },
+      "dwd_leang_first_leg_shipping_cost": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "乐昂(公司) - 物流运输 - 成本",
+        "column_count": 7
+      },
+      "dwd_lingxing_fba_report_shipment_list_tmp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 亚马逊FBA物流 - 报告 - 发货/物流 - 列表 - 临时",
+        "column_count": 40
+      },
+      "dwd_lingxing_inbound_shipment_detail_tmp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 入库 - 发货/物流 - 明细 - 临时",
+        "column_count": 20
+      },
+      "dwd_lingxing_mp_order_list_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 列表 - 增量",
+        "column_count": 123
+      },
+      "dwd_lingxing_multi_channel_order_detail_with_logistics_incr": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 明细 - 物流 - 增量",
+        "column_count": 30
+      },
+      "dwd_lingxing_multi_channel_order_detail_with_transaction_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 明细 - 交易 - 增量",
+        "column_count": 15
+      },
+      "dwd_lingxing_multi_channel_order_list_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 列表 - 增量",
+        "column_count": 23
+      },
+      "dwd_lingxing_refund_orders_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "退货退款"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 退款 - 增量",
+        "column_count": 22
+      },
+      "dwd_lingxing_sc_listing_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品链接/Listing - 增量",
+        "column_count": 58
+      },
+      "dwd_lingxing_sc_order_detail_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 明细 - 增量",
+        "column_count": 114
+      },
+      "dwd_lingxing_sc_order_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 订单 - 增量",
+        "column_count": 40
+      },
+      "dwd_lingxing_sc_profit_report_order_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 报告 - 订单 - 增量",
+        "column_count": 68
+      },
+      "dwd_lingxing_sc_rate": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 汇率/比率",
+        "column_count": 7
+      },
+      "dwd_lingxing_statistics_sale_stat_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 统计/汇总 - 销售 - 统计/汇总 - 增量",
+        "column_count": 25
+      },
+      "dwd_lingxing_storage_fee_month_incr": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "利润报告",
+          "仓储费用"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 增量",
+        "column_count": 29
+      },
+      "dwd_original_sales_estimates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "销售",
+        "column_count": 12
+      },
+      "dwd_tmp_order_profit_daily": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "临时 - 订单 - 利润 - 日度",
+        "column_count": 12
+      },
+      "dwd_xiao_liang_yu_gu": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "dwd_xiao_liang_yu_gu",
+        "column_count": 28
+      },
+      "leang_last_mile_order": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 订单",
+        "column_count": 16
+      },
+      "leang_last_mile_order_no": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 订单",
+        "column_count": 6
+      },
+      "leang_local_warehouse_holding_profit_report": {
+        "reason": "名称或分类有非库存特征，但也与库存/采购/物流相关，暂放可能有用池。",
+        "categories": [
+          "库存管理",
+          "利润报告"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 本地仓 - 仓库/仓储 - 利润 - 报告",
+        "column_count": 86
+      },
+      "leang_sales_estimates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 销售",
+        "column_count": 19
+      },
+      "leang_sales_estimates_tmp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 销售 - 临时",
+        "column_count": 20
+      },
+      "leang_shipment_order_detail": {
+        "reason": "名称或分类有非库存特征，但也与库存/采购/物流相关，暂放可能有用池。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 发货/物流 - 订单 - 明细",
+        "column_count": 67
+      },
+      "monthly_first_leg_cost_price": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理",
+          "利润报告"
+        ],
+        "layer": "业务表",
+        "description": "月度 - 成本 - 价格",
+        "column_count": 39
+      },
+      "monthly_store_clearance": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "业务表",
+        "description": "月度 - 店铺 - 清仓",
+        "column_count": 4
+      },
+      "mv_6": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "业务表",
+        "description": "mv_6",
+        "column_count": 12
+      },
+      "ods_lingxing_local_inventory_product_info": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 本地仓 - 库存 - 产品 - 信息",
+        "column_count": 55
+      },
+      "ods_lingxing_mp_order_list": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单 - 列表",
+        "column_count": 38
+      },
+      "ods_lingxing_mp_seller_list": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "店铺管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 卖家 - 列表",
+        "column_count": 10
+      },
+      "ods_lingxing_multi_channel_order_detail_with_logistics": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "销售分析",
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单 - 明细 - 物流",
+        "column_count": 20
+      },
+      "ods_lingxing_multi_channel_order_detail_with_transaction": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单 - 明细 - 交易",
+        "column_count": 15
+      },
+      "ods_lingxing_multi_channel_order_list": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单 - 列表",
+        "column_count": 16
+      },
+      "ods_lingxing_product_info": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 信息",
+        "column_count": 67
+      },
+      "ods_lingxing_refund_orders": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "退货退款"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 退款",
+        "column_count": 22
+      },
+      "ods_lingxing_sales_estimates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售",
+        "column_count": 20
+      },
+      "ods_lingxing_sales_estimates_monthly": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售 - 月度",
+        "column_count": 20
+      },
+      "ods_lingxing_sales_estimates_monthly_v1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售 - 月度 - (v1版本)",
+        "column_count": 20
+      },
+      "ods_lingxing_sales_estimates_stash": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售",
+        "column_count": 20
+      },
+      "ods_lingxing_sales_estimates_v2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 销售 - (v2版本)",
+        "column_count": 20
+      },
+      "ods_lingxing_sc_listing": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品链接/Listing",
+        "column_count": 58
+      },
+      "ods_lingxing_sc_market": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 市场/站点",
+        "column_count": 7
+      },
+      "ods_lingxing_sc_order_delta": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单",
+        "column_count": 40
+      },
+      "ods_lingxing_sc_order_detail": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 订单 - 明细",
+        "column_count": 115
+      },
+      "ods_lingxing_sc_profit_report_order": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "利润报告"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 利润 - 报告 - 订单",
+        "column_count": 69
+      },
+      "ods_lingxing_sc_rate": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 汇率/比率",
+        "column_count": 8
+      },
+      "ods_lingxing_sta_inbound_plan_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 计划 - 明细",
+        "column_count": 12
+      },
+      "ods_lingxing_sta_inbound_plan_list": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 入库 - 计划 - 列表",
+        "column_count": 12
+      },
+      "ods_lingxing_statistics_sale_stat": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 统计/汇总 - 销售 - 统计/汇总",
+        "column_count": 24
+      },
+      "ods_lingxing_storage_fee_month": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "利润报告",
+          "仓储费用"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP",
+        "column_count": 29
+      },
+      "ods_original_sales_estimates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "销售",
+        "column_count": 46
+      },
+      "ods_original_sales_estimates_v1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "销售 - (v1版本)",
+        "column_count": 46
+      },
+      "overseas_warehouse_dropshipping": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理",
+          "物流管理"
+        ],
+        "layer": "业务表",
+        "description": "海外仓 - 仓库/仓储",
+        "column_count": 5
+      },
+      "product_sales_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "业务表",
+        "description": "产品 - 销售 - 数量",
+        "column_count": 14
+      },
+      "return_orders": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "退货退款"
+        ],
+        "layer": "业务表",
+        "description": "退货/退款",
+        "column_count": 36
+      },
+      "temp_AFCE_2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 15
+      },
+      "temp_BI_ASIN_demo_temp": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - ASIN(亚马逊产品编号) - 临时",
+        "column_count": 15
+      },
+      "temp_base_data": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 7
+      },
+      "temp_buhuo_fnsku_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 106
+      },
+      "temp_buhuo_sku_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SKU(库存单位)",
+        "column_count": 57
+      },
+      "temp_daily_arrivals": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 日度",
+        "column_count": 4
+      },
+      "temp_daily_arrivals2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 日度",
+        "column_count": 4
+      },
+      "temp_daily_sales": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 日度 - 销售",
+        "column_count": 4
+      },
+      "temp_data_weekly": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 周度",
+        "column_count": 24
+      },
+      "temp_date_series": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 日期",
+        "column_count": 2
+      },
+      "temp_date_series_bd": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 日期",
+        "column_count": 2
+      },
+      "temp_duptm": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 9
+      },
+      "temp_dwd_lingxing_sc_listing_incr_1": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 产品链接/Listing - 增量",
+        "column_count": 8
+      },
+      "temp_fns_original_sales_estimates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "数据预测"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 销售",
+        "column_count": 4
+      },
+      "temp_fnsku_boxing": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 5
+      },
+      "temp_keshou_fnsku_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 57
+      },
+      "temp_keshou_sku_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SKU(库存单位)",
+        "column_count": 36
+      },
+      "temp_lingxing_fnsku_profit_margin": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - FNSKU(亚马逊配送网络SKU) - 利润",
+        "column_count": 4
+      },
+      "temp_lingxing_fnsku_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - FNSKU(亚马逊配送网络SKU) - 数量",
+        "column_count": 16
+      },
+      "temp_lingxing_fnsku_sales": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - FNSKU(亚马逊配送网络SKU) - 销售",
+        "column_count": 7
+      },
+      "temp_lingxing_fnsku_sales2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 6
+      },
+      "temp_lingxing_fsku_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 数量",
+        "column_count": 4
+      },
+      "temp_lingxing_keshou_pici": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 9
+      },
+      "temp_lingxing_kucu_pici": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 9
+      },
+      "temp_lingxing_last_kucun": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 17
+      },
+      "temp_lingxing_last_pici": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 7
+      },
+      "temp_lingxing_one_pici": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 9
+      },
+      "temp_lingxing_pici_kucun": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 6
+      },
+      "temp_lingxing_pici_num": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 数量",
+        "column_count": 7
+      },
+      "temp_lingxing_pici_sale": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 销售",
+        "column_count": 42
+      },
+      "temp_lingxing_pici_total": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP",
+        "column_count": 18
+      },
+      "temp_lingxing_sale_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 销售 - 数量",
+        "column_count": 5
+      },
+      "temp_lingxing_sku_quantity": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - SKU(库存单位) - 数量",
+        "column_count": 6
+      },
+      "temp_lingxing_sku_rules": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - SKU(库存单位) - 规则",
+        "column_count": 8
+      },
+      "temp_lingxing_stocking_rules_temp": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 领星ERP - 补货/备货 - 规则 - 临时",
+        "column_count": 39
+      },
+      "temp_logistics_monitoring_sj": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 物流",
+        "column_count": 6
+      },
+      "temp_new_lingxing_data": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - (new版本) - 领星ERP",
+        "column_count": 15
+      },
+      "temp_pici_buhuo_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 17
+      },
+      "temp_pici_type": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 4
+      },
+      "temp_pici_yfh": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 15
+      },
+      "temp_select_fnsku_zjg": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - FNSKU(亚马逊配送网络SKU)",
+        "column_count": 153
+      },
+      "temp_sku_store_combinations": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理",
+          "店铺管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SKU(库存单位) - 店铺",
+        "column_count": 2
+      },
+      "temp_spu_final_status": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SPU(标准产品单位) - 状态",
+        "column_count": 2
+      },
+      "temp_spu_status": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - SPU(标准产品单位) - 状态",
+        "column_count": 7
+      },
+      "temp_status_kucun": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 状态",
+        "column_count": 80
+      },
+      "temp_status_tuihuo": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "退货退款"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 状态",
+        "column_count": 5
+      },
+      "temp_status_xiaoliang": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 状态",
+        "column_count": 4
+      },
+      "temp_step2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 5
+      },
+      "temp_test": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 133
+      },
+      "temp_unique_dates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 2
+      },
+      "temp_xiaoliang_m": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 8
+      },
+      "temp_xiaoliang_m2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 10
+      },
+      "temp_xiaoliang_m2_test": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 10
+      },
+      "temp_xiaoliang_m_test": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 8
+      },
+      "temp_xiaoliangyg_m": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 6
+      },
+      "temp_xiaoliangyg_m_test": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 6
+      },
+      "tmp_complete_dataset_f2": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时",
+        "column_count": 21
+      },
+      "tmp_conversion_rate_tag": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 转化 - 汇率/比率",
+        "column_count": 16
+      },
+      "tmp_currency_rates": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 币种",
+        "column_count": 4
+      },
+      "tmp_fba_shipment_box_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
+        "column_count": 5
+      },
+      "tmp_fba_shipment_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
+        "column_count": 10
+      },
+      "tmp_fba_shipment_item_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
+        "column_count": 8
+      },
+      "tmp_inventory_risk_tag": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "库存管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 库存 - 风险",
+        "column_count": 7
+      },
+      "tmp_msku_sum": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - MSKU(商户SKU)",
+        "column_count": 3
+      },
+      "tmp_price_band_tag": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 价格",
+        "column_count": 14
+      },
+      "tmp_sales_tag": {
+        "reason": "产品、店铺、预测、退货、利润或日历等补充维度，按问题可能需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 销售",
+        "column_count": 7
+      },
+      "tmp_sta_fba_shipment_box_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
+        "column_count": 10
+      },
+      "tmp_sta_fba_shipment_detail": {
+        "reason": "schema 分类与库存/采购/物流相关，但暂未进入首期直接查询链路。",
+        "categories": [
+          "物流管理"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
+        "column_count": 20
+      }
+    },
+    "not_needed": {
+      "ads_dpt_mubiao": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "目标考核"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "ads_dpt_mubiao",
+        "column_count": 30
+      },
+      "ads_lingxing_mws_reviews_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "评论评价"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 增量",
+        "column_count": 11
+      },
+      "ads_lingxing_product_profit": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "利润报告"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 产品 - 利润",
+        "column_count": 82
+      },
+      "ads_lingxing_sc_sales_daily_tmp1": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 销售 - 日度",
+        "column_count": 117
+      },
+      "ads_lingxing_sc_sales_daily_tmp2": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 销售 - 日度",
+        "column_count": 122
+      },
+      "ads_lingxing_search_term_cost": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "利润报告"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - 成本",
+        "column_count": 31
+      },
+      "ads_lingxing_sp_asin_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
+        "column_count": 39
+      },
+      "ads_lingxing_sp_product_ad_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
+        "column_count": 26
+      },
+      "ads_lingxing_sp_word_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 45
+      },
+      "ads_m_completion_rate": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "目标考核"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "完成率 - 汇率/比率",
+        "column_count": 8
+      },
+      "ads_m_completion_rate_test": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "目标考核"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "完成率 - 汇率/比率",
+        "column_count": 8
+      },
+      "ads_sales_target_daily": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析",
+          "目标考核"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "销售 - 目标 - 日度",
+        "column_count": 38
+      },
+      "ads_week_completion_rate": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "目标考核"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "完成率 - 汇率/比率",
+        "column_count": 8
+      },
+      "dim_lingxing_adv_account": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放",
+          "店铺管理"
+        ],
+        "layer": "DIM-维度表",
+        "description": "领星ERP - 广告 - 账号",
+        "column_count": 8
+      },
+      "dwd_lingxing_mws_reviews_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "评论评价"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 增量",
+        "column_count": 28
+      },
+      "dwd_lingxing_newad_portfolios_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 增量",
+        "column_count": 10
+      },
+      "dwd_lingxing_sb_word_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SB广告(Sponsored Brands) - 增量",
+        "column_count": 27
+      },
+      "dwd_lingxing_sc_newad_aba_report_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 报告 - 增量",
+        "column_count": 4
+      },
+      "dwd_lingxing_sc_product_performance": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现",
+        "column_count": 119
+      },
+      "dwd_lingxing_sc_product_performance_asin": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
+        "column_count": 142
+      },
+      "dwd_lingxing_sc_product_performance_msku": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
+        "column_count": 142
+      },
+      "dwd_lingxing_sc_profit_report_msku_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 报告 - MSKU(商户SKU) - 增量",
+        "column_count": 199
+      },
+      "dwd_lingxing_sc_profit_report_msku_incr_tmp": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 报告 - MSKU(商户SKU) - 增量 - 临时",
+        "column_count": 199
+      },
+      "dwd_lingxing_sc_profit_report_sku_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 报告 - SKU(库存单位) - 增量",
+        "column_count": 198
+      },
+      "dwd_lingxing_sc_profit_report_store_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "利润报告",
+          "店铺管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 报告 - 店铺 - 增量",
+        "column_count": 194
+      },
+      "dwd_lingxing_sc_profit_statistics_msku_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 利润 - 统计/汇总 - MSKU(商户SKU) - 增量",
+        "column_count": 177
+      },
+      "dwd_lingxing_sp_ad_groups_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 广告 - 增量",
+        "column_count": 10
+      },
+      "dwd_lingxing_sp_asin_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
+        "column_count": 17
+      },
+      "dwd_lingxing_sp_campaigns_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 16
+      },
+      "dwd_lingxing_sp_key_word_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 40
+      },
+      "dwd_lingxing_sp_product_ad_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
+        "column_count": 16
+      },
+      "dwd_lingxing_sp_transaction_detail_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 交易 - 明细 - 增量",
+        "column_count": 71
+      },
+      "dwd_lingxing_sp_word_reports_incr": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 41
+      },
+      "feishu_amz_bi_upload": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "业务表",
+        "description": "飞书",
+        "column_count": 104
+      },
+      "feishu_multi_platform_bi_upload": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "业务表",
+        "description": "飞书",
+        "column_count": 92
+      },
+      "leang_oper_staff_org_offline": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "人员组织"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 员工/人员",
+        "column_count": 7
+      },
+      "leang_sales_dep_leader_evaluations": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析",
+          "人员组织",
+          "目标考核"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 销售 - 组长/负责人",
+        "column_count": 68
+      },
+      "leang_sales_staff_performance_evaluations": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析",
+          "人员组织",
+          "目标考核"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 销售 - 员工/人员 - 业绩/表现",
+        "column_count": 65
+      },
+      "leang_sales_team_leader_evaluations": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "销售分析",
+          "人员组织",
+          "目标考核"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 销售 - 团队 - 组长/负责人",
+        "column_count": 69
+      },
+      "leang_staff_org": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "人员组织"
+        ],
+        "layer": "业务表",
+        "description": "乐昂(公司) - 员工/人员",
+        "column_count": 17
+      },
+      "mid_final_result": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "业务表",
+        "description": "mid_final_result",
+        "column_count": 46
+      },
+      "ods_lingxing_mws_reviews": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "评论评价"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP",
+        "column_count": 29
+      },
+      "ods_lingxing_newad_portfolios": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP",
+        "column_count": 10
+      },
+      "ods_lingxing_sb_word_reports": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SB广告(Sponsored Brands)",
+        "column_count": 28
+      },
+      "ods_lingxing_sc_adv_list": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 广告 - 列表",
+        "column_count": 8
+      },
+      "ods_lingxing_sc_newad_aba_report": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 报告",
+        "column_count": 5
+      },
+      "ods_lingxing_sc_product_performance": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现",
+        "column_count": 119
+      },
+      "ods_lingxing_sc_product_performance_asin": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
+        "column_count": 119
+      },
+      "ods_lingxing_sc_product_performance_msku": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
+        "column_count": 119
+      },
+      "ods_lingxing_sc_profit_report_msku": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 利润 - 报告 - MSKU(商户SKU)",
+        "column_count": 200
+      },
+      "ods_lingxing_sc_profit_report_sku": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 利润 - 报告 - SKU(库存单位)",
+        "column_count": 199
+      },
+      "ods_lingxing_sc_profit_report_store": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "利润报告",
+          "店铺管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 利润 - 报告 - 店铺",
+        "column_count": 195
+      },
+      "ods_lingxing_sc_profit_statistics_msku": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "产品管理",
+          "利润报告"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 利润 - 统计/汇总 - MSKU(商户SKU)",
+        "column_count": 176
+      },
+      "ods_lingxing_sp_ad_groups": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 广告",
+        "column_count": 10
+      },
+      "ods_lingxing_sp_asin_reports": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号)",
+        "column_count": 18
+      },
+      "ods_lingxing_sp_campaigns": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products)",
+        "column_count": 16
+      },
+      "ods_lingxing_sp_key_word_reports": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products)",
+        "column_count": 41
+      },
+      "ods_lingxing_sp_product_ad_reports": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告",
+        "column_count": 17
+      },
+      "ods_lingxing_sp_transaction_detail": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 交易 - 明细",
+        "column_count": 71
+      },
+      "ods_lingxing_sp_word_reports": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "广告投放"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products)",
+        "column_count": 42
+      },
+      "temp_pici_awd": {
+        "reason": "与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时 - 亚马逊AWD仓储",
+        "column_count": 14
+      },
+      "temp_pici_cgzt": {
+        "reason": "与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 14
+      },
+      "temp_pici_dfh": {
+        "reason": "与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TEMP-临时表",
+        "description": "临时",
+        "column_count": 12
+      },
+      "tmp_current_time": {
+        "reason": "与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时",
+        "column_count": 1
+      },
+      "tmp_t_source": {
+        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
+        "categories": [
+          "其他"
+        ],
+        "layer": "TMP-临时表",
+        "description": "临时",
+        "column_count": 64
+      }
+    }
+  }
+}
