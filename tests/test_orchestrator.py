@@ -1,4 +1,5 @@
 import unittest
+import os
 
 from pmc_agent import PmcAgent
 from pmc_agent.config import AgentConfig
@@ -47,6 +48,16 @@ class FailingSnapshotTool:
 
 
 class PmcAgentTests(unittest.TestCase):
+    def setUp(self):
+        self._old_db_enabled = os.environ.get("STI_DB_ENABLED")
+        os.environ["STI_DB_ENABLED"] = "false"
+
+    def tearDown(self):
+        if self._old_db_enabled is None:
+            os.environ.pop("STI_DB_ENABLED", None)
+        else:
+            os.environ["STI_DB_ENABLED"] = self._old_db_enabled
+
     def test_inventory_risk_request_produces_decision(self):
         result = PmcAgent.create_default(FakeIntentModel(TaskType.INVENTORY_RISK)).run("检查 A100 是否有缺料风险")
 

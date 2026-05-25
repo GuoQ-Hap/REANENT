@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from pmc_agent.app_logging import get_logger, log_extra
 from pmc_agent.config import AgentConfig
 from pmc_agent.connectors.database import StiDatabaseConnector
+from pmc_agent.connectors.vector_database import MilvusVectorConnector
 from pmc_agent.domain import AgentRunResult, ControlDecision, GoalRunResult, TaskRequest
 from pmc_agent.goal_loop import GoalLoop
 from pmc_agent.model import FailureHandlingModelClient, IntentModelClient, OpenAIIntentModelClient
 from pmc_agent.model_io import generate_time_id
 from pmc_agent.planning import build_plan, classify_task
 from pmc_agent.planning.classifier import enrich_request
+from pmc_agent.schema_catalog import field_pack_for_task
 from pmc_agent.state import RunStateMachine, RunStatus
 from pmc_agent.tools import InventoryRiskTool, InventorySnapshotTool, ToolRegistry
 from pmc_agent.tools import (
@@ -46,6 +48,8 @@ class PmcAgent:
         failure_model = _resolve_failure_model(intent_model)
         db_connector = StiDatabaseConnector()
         inventory_connector = db_connector if db_connector.config.ready else None
+        vector_connector = MilvusVectorConnector()
+        knowledge_connector = vector_connector if vector_connector.config.ready else None
         tools = ToolRegistry(
             tools={
                 "inventory_snapshot": InventorySnapshotTool(connector=inventory_connector),
@@ -57,7 +61,7 @@ class PmcAgent:
                 "purchase_verification": PurchaseVerificationTool(),
                 "weekly_shipment_plan": WeeklyShipmentPlanTool(),
                 "exception_case": ExceptionCaseTool(),
-                "knowledge_lookup": KnowledgeLookupTool(),
+                "knowledge_lookup": KnowledgeLookupTool(connector=knowledge_connector),
             }
         )
         return cls(config=config, tools=tools, intent_model=intent_model, failure_model=failure_model)
@@ -91,6 +95,7 @@ class PmcAgent:
         signals = []
         artifacts = {}
         tool_calls = 0
+        field_pack = field_pack_for_task(plan.task_type)
 
         # decisions 是可执行建议；artifacts 是草稿表、计划、Case 或知识片段，需要人工复核。
         for step in plan.steps:
@@ -112,17 +117,17 @@ class PmcAgent:
                 if step.tool == "simple_chat":
                     artifacts["chat_reply"] = self.tools.run(step.tool, query=request.text)
                 elif step.tool == "inventory_snapshot":
-                    snapshots = self.tools.run(step.tool, material_code=request.material_code)
+                    snapshots = self.tools.run(step.tool, material_code=request.material_code, field_pack=field_pack)
                 elif step.tool == "inventory_risk":
                     decisions = self.tools.run(step.tool, snapshots=snapshots)
                 elif step.tool == "control_tower":
                     if not snapshots:
-                        snapshots = self.tools.run("inventory_snapshot", material_code=request.material_code)
+                        snapshots = self.tools.run("inventory_snapshot", material_code=request.material_code, field_pack=field_pack)
                     signals = self.tools.run(step.tool, snapshots=snapshots)
                     artifacts["risk_signals"] = signals
                 elif step.tool in {"shortage_trace", "shipment_verification", "purchase_verification"}:
                     if not snapshots:
-                        snapshots = self.tools.run("inventory_snapshot", material_code=request.material_code)
+                        snapshots = self.tools.run("inventory_snapshot", material_code=request.material_code, field_pack=field_pack)
                     decisions = self.tools.run(step.tool, snapshots=snapshots)
                 elif step.tool == "weekly_shipment_plan":
                     artifacts["weekly_shipment_plan"] = self.tools.run(step.tool, signals=signals)

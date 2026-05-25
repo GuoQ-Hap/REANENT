@@ -4,6 +4,8 @@ from typing import Protocol
 
 from pmc_agent.app_logging import get_logger, log_extra
 from pmc_agent.domain import InventorySnapshot, Material
+from pmc_agent.query_spec import QuerySpec
+from pmc_agent.schema_catalog import FieldPack
 
 
 logger = get_logger(__name__)
@@ -15,7 +17,12 @@ class BusinessSystemConnector(Protocol):
     def get_material(self, material_code: str) -> Material | None:
         ...
 
-    def get_inventory_snapshot(self, material_code: str | None = None) -> list[InventorySnapshot]:
+    def get_inventory_snapshot(
+        self,
+        material_code: str | None = None,
+        field_pack: FieldPack | str | None = None,
+        query_spec: QuerySpec | None = None,
+    ) -> list[InventorySnapshot]:
         ...
 
     def record_control_advice(self, material_code: str, advice: list[str]) -> str:

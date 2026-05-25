@@ -7,33 +7,46 @@
     <link rel="stylesheet" href="/chat.css" />
   </head>
   <body>
-    <main class="chat-shell">
-      <header class="chat-header">
-        <div>
-          <h1>PMC 智能体</h1>
-          <p>库存、断货、采购、发货和规则口径对话窗口</p>
-        </div>
-        <div class="model-controls">
-          <label class="switch">
-            <input id="useRealModel" type="checkbox" />
-            <span>真实模型</span>
-          </label>
-          <select id="modelSelect" aria-label="模型选择">
-            <option value="gpt-5.1">gpt-5.1</option>
-          </select>
-        </div>
-      </header>
+    <main class="workspace-shell">
+      <section class="chat-shell">
+        <header class="chat-header">
+          <div>
+            <h1>PMC 智能体</h1>
+            <p>库存、断货、采购、发货和规则口径对话窗口</p>
+          </div>
+          <div class="model-controls">
+            <label class="switch">
+              <input id="useRealModel" type="checkbox" />
+              <span>真实模型</span>
+            </label>
+            <select id="modelSelect" aria-label="模型选择">
+              <option value="gpt-5.1">gpt-5.1</option>
+            </select>
+          </div>
+        </header>
 
-      <section id="messages" class="messages" aria-live="polite">
-        <article class="message assistant">
-          <div class="bubble">你好，可以直接问我库存风险、断货追因、发货验证或采购建议。</div>
-        </article>
+        <section id="messages" class="messages" aria-live="polite">
+          <article class="message assistant">
+            <div class="bubble">你好，可以直接问我库存风险、断货追因、发货验证或采购建议。</div>
+          </article>
+        </section>
+
+        <form id="chatForm" class="composer">
+          <textarea id="chatInput" rows="2" placeholder="例如：检查 A100 是否有缺料风险"></textarea>
+          <button type="submit">发送</button>
+        </form>
       </section>
 
-      <form id="chatForm" class="composer">
-        <textarea id="chatInput" rows="2" placeholder="例如：检查 A100 是否有缺料风险"></textarea>
-        <button type="submit">发送</button>
-      </form>
+      <aside class="runtime-panel" aria-live="polite">
+        <div class="runtime-header">
+          <div>
+            <h2>运行状态</h2>
+            <p id="runtimeSummary">等待请求</p>
+          </div>
+          <span id="runtimeBadge" class="runtime-badge idle">Idle</span>
+        </div>
+        <div id="routeStrip" class="flow-canvas"></div>
+      </aside>
     </main>
     <script src="/chat.js"></script>
   </body>

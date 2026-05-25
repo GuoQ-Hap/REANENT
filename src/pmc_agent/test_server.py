@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from pmc_agent.agentic_loop import AgenticPmcLoop, OpenAIAgenticPlannerClient
 from pmc_agent.app_logging import get_logger, log_extra
+from pmc_agent.capabilities.excel_attachment import create_agentic_excel_attachment, create_result_excel_attachment
 from pmc_agent.context_manager import ContextManager, HeuristicContextDecisionClient
 from pmc_agent.domain import TaskRequest, TaskType
 from pmc_agent.env import load_env_file
@@ -21,11 +26,16 @@ from pmc_agent.model_io import generate_time_id
 from pmc_agent.model_router import ModelAction, ModelRouteRequest, ModelRouter, ModelRoutingPolicy
 from pmc_agent.orchestrator import PmcAgent
 from pmc_agent.planning.classifier import enrich_request
+from pmc_agent.response_formatter import build_agent_result_ui, build_agentic_result_ui, format_agent_reply, wants_excel_attachment
 
 
 logger = get_logger(__name__)
 ROOT_DIR = Path(__file__).resolve().parents[2]
 WEB_DIR = ROOT_DIR / "web"
+GENERATED_DIR = WEB_DIR / "generated"
+RUN_MONITOR_LOCK = threading.Lock()
+RUN_MONITOR: dict[str, dict[str, Any]] = {}
+MAX_MONITORED_RUNS = 30
 
 MODEL_OPTIONS = [
     "gpt-5.1",
@@ -273,6 +283,10 @@ class TestConsoleHandler(SimpleHTTPRequestHandler):
         if path == "/api/health":
             self._send_json({"ok": True})
             return
+        if path == "/api/chat/status":
+            run_id = str(parse_qs(urlparse(self.path).query).get("run_id", [""])[0])
+            self._send_json(get_monitored_chat_run(run_id))
+            return
         if path == "/api/tests":
             self._send_json({"tests": TEST_TARGETS})
             return
@@ -307,6 +321,10 @@ class TestConsoleHandler(SimpleHTTPRequestHandler):
         if path == "/api/chat/run":
             payload = self._read_json()
             self._send_json(run_chat(payload))
+            return
+        if path == "/api/chat/start":
+            payload = self._read_json()
+            self._send_json(start_monitored_chat(payload))
             return
         self.send_error(404, "Not found")
 
@@ -461,12 +479,16 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
                 "error": f"{type(exc).__name__}: {exc}",
                 "hint": "真实模型驱动循环失败，请检查 OPENAI_API_KEY、OPENAI_BASE_URL、模型名和数据库配置。",
             }
+        attachments = _agentic_attachments(result, text, request_id)
+        reply = _append_attachment_links(result.reply, attachments)
         return {
             "ok": result.ok,
             "mode": "agentic_model",
             "model": selected_model,
-            "reply": result.reply,
+            "reply": reply,
+            "ui": build_agentic_result_ui(result),
             "result": _to_jsonable(result),
+            "artifacts": {"attachments": attachments} if attachments else {},
             "record_path": f"logs/model_interactions/conversations/{request_id}.txt",
             "error": result.error,
         }
@@ -482,14 +504,163 @@ def run_chat(payload: dict[str, Any]) -> dict[str, Any]:
             "hint": "如果启用了真实数据库，请检查物料编码是否存在、数据库连接是否可用；如果启用了真实模型，请检查模型 API 配置。",
         }
 
+    _attach_optional_excel(result, text)
     return {
         "ok": True,
         "mode": "real_model" if use_real_model else "local_heuristic",
         "model": selected_model,
         "reply": format_chat_reply(result),
+        "ui": build_agent_result_ui(result),
         "result": _to_jsonable(result),
         "context_decision": _to_jsonable(ContextManager(HeuristicContextDecisionClient()).select_context(text, recent_context)),
     }
+
+
+def start_monitored_chat(payload: dict[str, Any]) -> dict[str, Any]:
+    text = str(payload.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "error": "请输入内容"}
+    run_id = generate_time_id()
+    run = {
+        "ok": True,
+        "run_id": run_id,
+        "status": "queued",
+        "created_at": time.time(),
+        "updated_at": time.time(),
+        "events": [],
+        "result": None,
+        "error": None,
+    }
+    with RUN_MONITOR_LOCK:
+        if len(RUN_MONITOR) >= MAX_MONITORED_RUNS:
+            oldest = sorted(RUN_MONITOR, key=lambda key: RUN_MONITOR[key].get("created_at", 0))[: len(RUN_MONITOR) - MAX_MONITORED_RUNS + 1]
+            for key in oldest:
+                RUN_MONITOR.pop(key, None)
+        RUN_MONITOR[run_id] = run
+    _append_monitor_event(run_id, "queued", "排队中", "后端已接收请求，等待执行。", "queued")
+    thread = threading.Thread(target=_run_monitored_chat_worker, args=(run_id, dict(payload)), daemon=True)
+    thread.start()
+    return {"ok": True, "run_id": run_id, "status": "queued"}
+
+
+def get_monitored_chat_run(run_id: str) -> dict[str, Any]:
+    if not run_id:
+        return {"ok": False, "error": "run_id 不能为空"}
+    with RUN_MONITOR_LOCK:
+        run = RUN_MONITOR.get(run_id)
+        if not run:
+            return {"ok": False, "error": f"未知 run_id: {run_id}"}
+        return _to_jsonable(run)
+
+
+def _run_monitored_chat_worker(run_id: str, payload: dict[str, Any]) -> None:
+    with RUN_MONITOR_LOCK:
+        if run_id in RUN_MONITOR:
+            RUN_MONITOR[run_id]["status"] = "running"
+            RUN_MONITOR[run_id]["updated_at"] = time.time()
+    text = str(payload.get("text") or "").strip()
+    use_real_model = bool(payload.get("use_real_model", False))
+    recent_context = payload.get("recent_context")
+    if not isinstance(recent_context, list):
+        recent_context = []
+    selected_model = _resolve_model(payload.get("model")) if use_real_model else None
+
+    _append_monitor_event(run_id, "run_started", "开始执行", "正在构建智能体调用路线。", "running", model=selected_model, mode="agentic_model" if use_real_model else "local_heuristic")
+    try:
+        if use_real_model:
+            request_id = run_id
+
+            def event_sink(event: dict[str, Any]) -> None:
+                _append_monitor_event(
+                    run_id,
+                    str(event.get("event") or "agent_event"),
+                    str(event.get("label") or event.get("event") or "运行事件"),
+                    str(event.get("detail") or ""),
+                    str(event.get("status") or "running"),
+                    **{key: value for key, value in event.items() if key not in {"event", "label", "detail", "status"}},
+                )
+
+            loop = AgenticPmcLoop(
+                planner=OpenAIAgenticPlannerClient(model=selected_model),
+                model=selected_model,
+                event_sink=event_sink,
+            )
+            result = loop.run(text, recent_context=recent_context, request_id=request_id)
+            attachments = _agentic_attachments(result, text, request_id)
+            payload_result = {
+                "ok": result.ok,
+                "mode": "agentic_model",
+                "model": selected_model,
+                "reply": _append_attachment_links(result.reply, attachments),
+                "ui": build_agentic_result_ui(result),
+                "result": _to_jsonable(result),
+                "artifacts": {"attachments": attachments} if attachments else {},
+                "record_path": f"logs/model_interactions/conversations/{request_id}.txt",
+                "error": result.error,
+            }
+        else:
+            _append_monitor_event(run_id, "model_thinking", "本地意图判断", "本地规则正在判断任务类型。", "running")
+            intent_model = HeuristicIntentModel()
+            agent = PmcAgent.create_default(intent_model)
+            _append_monitor_event(run_id, "route_started", "正在构建路线", "确定性编排器正在生成执行步骤。", "running")
+            result = agent.run(text)
+            for index, step in enumerate(result.plan.steps, start=1):
+                _append_monitor_event(run_id, "route_node_completed", f"节点 {index} 返回", f"{step.name}: {step.purpose}", "completed", route_index=index, action=step.tool or step.name)
+            _attach_optional_excel(result, text)
+            reply = format_chat_reply(result)
+            payload_result = {
+                "ok": True,
+                "mode": "local_heuristic",
+                "model": selected_model,
+                "reply": reply,
+                "ui": build_agent_result_ui(result),
+                "result": _to_jsonable(result),
+                "context_decision": _to_jsonable(ContextManager(HeuristicContextDecisionClient()).select_context(text, recent_context)),
+            }
+        _append_monitor_event(run_id, "final_returned", "最终返回", "后端已返回最终结果。", "completed")
+        _complete_monitor_run(run_id, "completed", payload_result)
+    except Exception as exc:
+        error_payload = {
+            "ok": False,
+            "mode": "agentic_model" if use_real_model else "local_heuristic",
+            "model": selected_model,
+            "error": f"{type(exc).__name__}: {exc}",
+            "hint": "请检查模型、数据库或本地服务配置。",
+        }
+        _append_monitor_event(run_id, "run_failed", "运行失败", error_payload["error"], "failed")
+        _complete_monitor_run(run_id, "failed", error_payload, error=error_payload["error"])
+
+
+def _append_monitor_event(run_id: str, event: str, label: str, detail: str, status: str, **payload: Any) -> None:
+    with RUN_MONITOR_LOCK:
+        run = RUN_MONITOR.get(run_id)
+        if not run:
+            return
+        events = run.setdefault("events", [])
+        item = {
+            "seq": len(events) + 1,
+            "time": time.time(),
+            "event": event,
+            "label": label,
+            "detail": detail,
+            "status": status,
+            **_to_jsonable(payload),
+        }
+        events.append(item)
+        run["updated_at"] = item["time"]
+        if status in {"running", "queued"} and run.get("status") not in {"completed", "failed"}:
+            run["status"] = "running" if status == "running" else "queued"
+
+
+def _complete_monitor_run(run_id: str, status: str, result: dict[str, Any], error: str | None = None) -> None:
+    with RUN_MONITOR_LOCK:
+        run = RUN_MONITOR.get(run_id)
+        if not run:
+            return
+        run["status"] = status
+        run["result"] = result
+        run["error"] = error
+        run["updated_at"] = time.time()
 
 
 def run_llm_module(module_id: str, input_payload: Any = None, model: Any = None) -> dict[str, Any]:
@@ -646,37 +817,30 @@ def infer_task_type(text: str) -> TaskType:
 
 
 def format_chat_reply(result) -> str:
-    failure_decision = result.artifacts.get("failure_decision")
-    if failure_decision:
-        if isinstance(failure_decision, dict):
-            message = str(failure_decision.get("user_message") or "当前查询失败，模型已生成处理建议。")
-            suggested = failure_decision.get("suggested_inputs") or []
-        else:
-            message = str(getattr(failure_decision, "user_message", "当前查询失败，模型已生成处理建议。"))
-            suggested = getattr(failure_decision, "suggested_inputs", [])
-        if suggested:
-            return message + "\n\n可补充：" + "；".join(str(item) for item in suggested)
-        return message
+    return format_agent_reply(result)
 
-    chat_reply = result.artifacts.get("chat_reply")
-    if isinstance(chat_reply, dict) and chat_reply.get("reply"):
-        return str(chat_reply["reply"])
 
-    lines = []
-    if result.decisions:
-        for decision in result.decisions:
-            level = _risk_label(decision.risk_level.value)
-            lines.append(f"{decision.material_code}：{level}。{_localize_summary(decision.summary)}")
-            if decision.recommended_actions:
-                lines.append("建议：" + "；".join(_localize_action(item) for item in decision.recommended_actions[:2]))
-    visible_artifacts = {key: value for key, value in result.artifacts.items() if key != "chat_reply"}
-    if visible_artifacts:
-        lines.append("已生成草稿：" + "、".join(visible_artifacts.keys()))
-    if not lines:
-        return "我还没有拿到足够的信息。可以补充物料编码，比如 A100，或说明你要看库存、采购还是发货。"
-    if result.plan.assumptions:
-        lines.append("提示：未识别到具体物料，当前按整体库存范围处理。")
-    return "\n\n".join(lines)
+def _attach_optional_excel(result, user_text: str) -> None:
+    if not wants_excel_attachment(user_text):
+        return
+    attachment = create_result_excel_attachment(result, GENERATED_DIR)
+    if not attachment:
+        return
+    result.artifacts.setdefault("attachments", []).append(asdict(attachment))
+
+
+def _agentic_attachments(result, user_text: str, request_id: str) -> list[dict[str, Any]]:
+    if not wants_excel_attachment(user_text):
+        return []
+    attachment = create_agentic_excel_attachment(result, GENERATED_DIR, request_id)
+    return [asdict(attachment)] if attachment else []
+
+
+def _append_attachment_links(reply: str, attachments: list[dict[str, Any]]) -> str:
+    if not attachments:
+        return reply
+    links = "\n".join(f"[{item.get('name')}]({item.get('url')})" for item in attachments if item.get("url"))
+    return f"{reply}\n\n**附件下载**\n{links}" if links else reply
 
 
 def is_simple_chat(text: str) -> bool:
@@ -727,8 +891,14 @@ def check_expected_nodes(history: list[Any], expected_nodes: list[str]) -> dict[
 
 
 def _to_jsonable(value: Any) -> Any:
+    if value is None:
+        return None
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
     if is_dataclass(value):
         return _to_jsonable(asdict(value))
     if isinstance(value, dict):

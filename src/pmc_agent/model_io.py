@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from enum import Enum
 import json
 from pathlib import Path
@@ -81,6 +82,10 @@ def _to_jsonable(value: Any) -> Any:
         return None
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else float(value)
+    if isinstance(value, (date, datetime)):
+        return value.isoformat()
     if is_dataclass(value):
         return _to_jsonable(asdict(value))
     if isinstance(value, dict):

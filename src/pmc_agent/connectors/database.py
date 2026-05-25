@@ -8,6 +8,8 @@ from pmc_agent.app_logging import get_logger, log_extra
 from pmc_agent.connectors.base import ConnectorLogMixin
 from pmc_agent.domain import InventorySnapshot, Material
 from pmc_agent.env import load_env_file
+from pmc_agent.query_spec import QuerySpec
+from pmc_agent.schema_catalog import ALL_WAREHOUSE_CATALOG, FieldPack, normalize_field_pack
 
 
 logger = get_logger(__name__)
@@ -110,20 +112,26 @@ class StiDatabaseConnector(ConnectorLogMixin):
             return None
         return Material(code=snapshots[0].material_code, name=snapshots[0].material_code)
 
-    def get_inventory_snapshot(self, material_code: str | None = None) -> list[InventorySnapshot]:
+    def get_inventory_snapshot(
+        self,
+        material_code: str | None = None,
+        field_pack: FieldPack | str | None = None,
+        query_spec: QuerySpec | None = None,
+    ) -> list[InventorySnapshot]:
         if not self.config.ready:
             logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
             return []
+        spec = query_spec or QuerySpec.inventory(material_code=material_code, field_pack=field_pack)
         self.log_query_started("get_inventory_snapshot", material_code)
         try:
-            rows = self._query_inventory_rows(material_code)
+            rows = self._query_inventory_rows(spec)
         except Exception as exc:
             self.log_query_failed("get_inventory_snapshot")
             raise RuntimeError("STI database inventory snapshot query failed.") from exc
         snapshots = [self._row_to_snapshot(row) for row in rows]
         if not snapshots:
             self.log_empty_result("get_inventory_snapshot")
-            query_scope = f"material_code={material_code}" if material_code else "portfolio query"
+            query_scope = f"material_code={spec.material_code}" if spec.material_code else "portfolio query"
             raise LookupError(f"No inventory snapshot found in STI database for {query_scope}.")
         self.log_query_completed("get_inventory_snapshot", len(snapshots))
         return snapshots
@@ -153,89 +161,58 @@ class StiDatabaseConnector(ConnectorLogMixin):
             cursorclass=pymysql.cursors.DictCursor,
         )
 
-    def _query_inventory_rows(self, material_code: str | None) -> list[dict[str, Any]]:
+    def _query_inventory_rows(self, spec: QuerySpec) -> list[dict[str, Any]]:
         self.last_resolved_aliases = []
+        material_code = spec.material_code
         if material_code:
             with self._connect() as conn:
-                rows = self._query_inventory_rows_by_codes(conn, [material_code])
+                rows = self._query_inventory_rows_by_codes(conn, [material_code], spec)
                 if rows:
                     self.last_resolved_aliases = [material_code]
                     return rows
                 aliases = self._resolve_inventory_aliases(conn, material_code)
                 if aliases:
                     self.last_resolved_aliases = aliases
-                    return self._query_inventory_rows_by_codes(conn, aliases)
+                    return self._query_inventory_rows_by_codes(conn, aliases, spec)
                 return []
 
-        select_sql = """
+        filter_sql, params = _filter_sql(spec)
+        order_sql = _order_sql(spec)
+        select_sql = f"""
             SELECT
-                msku,
-                sku,
-                fnsku,
-                store_name,
-                country_code,
-                shipments_country,
-                sku_name,
-                afn_fulfillable_quantity,
-                fba_warehouse_quantity,
-                overseas_warehouse_quantity,
-                local_warehouse_quantity,
-                afn_inbound_receiving_quantity,
-                afn_inbound_working_quantity,
-                oversease_afn_inbound_shipped_quantity,
-                local_afn_inbound_shipped_quantity,
-                overseas_wh_product_onway,
-                local_wh_product_onway,
-                planned_quantity,
-                sale_quantity_7,
-                sale_quantity_30,
-                future_30d_sales,
-                safety_stock_sales
-            FROM ads_lingxing_all_warehouse_new_v1
+                {_select_fields(spec)}
+            FROM {ALL_WAREHOUSE_CATALOG.table_name}
+            {filter_sql}
+            {order_sql}
+            LIMIT {_bounded_limit(spec.limit)}
         """
-        select_sql += " LIMIT 50"
         with self._connect() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(select_sql)
+                cursor.execute(select_sql, params)
                 return list(cursor.fetchall())
 
-    def _query_inventory_rows_by_codes(self, conn: Any, codes: list[str]) -> list[dict[str, Any]]:
+    def _query_inventory_rows_by_codes(self, conn: Any, codes: list[str], spec: QuerySpec) -> list[dict[str, Any]]:
         normalized = list(dict.fromkeys(code.strip() for code in codes if code and code.strip()))
         if not normalized:
             return []
         placeholders = ", ".join(["%s"] * len(normalized))
+        filter_sql, filter_params = _filter_sql(spec, prefix="AND")
+        order_sql = _order_sql(spec)
         select_sql = f"""
             SELECT
-                msku,
-                sku,
-                fnsku,
-                store_name,
-                country_code,
-                shipments_country,
-                sku_name,
-                afn_fulfillable_quantity,
-                fba_warehouse_quantity,
-                overseas_warehouse_quantity,
-                local_warehouse_quantity,
-                afn_inbound_receiving_quantity,
-                afn_inbound_working_quantity,
-                oversease_afn_inbound_shipped_quantity,
-                local_afn_inbound_shipped_quantity,
-                overseas_wh_product_onway,
-                local_wh_product_onway,
-                planned_quantity,
-                sale_quantity_7,
-                sale_quantity_30,
-                future_30d_sales,
-                safety_stock_sales
-            FROM ads_lingxing_all_warehouse_new_v1
-            WHERE UPPER(msku) IN ({placeholders})
-               OR UPPER(sku) IN ({placeholders})
-               OR UPPER(fnsku) IN ({placeholders})
-            LIMIT 50
+                {_select_fields(spec)}
+            FROM {ALL_WAREHOUSE_CATALOG.table_name}
+            WHERE (
+                UPPER(msku) IN ({placeholders})
+                OR UPPER(sku) IN ({placeholders})
+                OR UPPER(fnsku) IN ({placeholders})
+            )
+            {filter_sql}
+            {order_sql}
+            LIMIT {_bounded_limit(spec.limit)}
         """
         upper_codes = [code.upper() for code in normalized]
-        params = [*upper_codes, *upper_codes, *upper_codes]
+        params = [*upper_codes, *upper_codes, *upper_codes, *filter_params]
         with conn.cursor() as cursor:
             cursor.execute(select_sql, params)
             return list(cursor.fetchall())
@@ -282,6 +259,8 @@ class StiDatabaseConnector(ConnectorLogMixin):
             demand_next_7d=demand_next_7d,
             demand_next_30d=demand_next_30d,
             metadata={
+                "source_table": ALL_WAREHOUSE_CATALOG.table_name,
+                "field_pack": normalize_field_pack(row.get("_field_pack")).value if row.get("_field_pack") else None,
                 "store_name": row.get("store_name"),
                 "country_code": row.get("country_code"),
                 "shipments_country": row.get("shipments_country"),
@@ -289,5 +268,70 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 "msku": row.get("msku"),
                 "sku": row.get("sku"),
                 "fnsku": row.get("fnsku"),
+                "raw_evidence": {key: value for key, value in row.items() if not key.startswith("_")},
             },
         )
+
+
+def _select_fields(spec: QuerySpec) -> str:
+    fields = list(ALL_WAREHOUSE_CATALOG.fields_for(spec.field_pack))
+    # Carry the selected pack through the row mapping without trusting the DB for this value.
+    fields_sql = ",\n                ".join(fields)
+    pack = normalize_field_pack(spec.field_pack).value.replace("'", "")
+    return f"{fields_sql},\n                '{pack}' AS _field_pack"
+
+
+def _filter_sql(spec: QuerySpec, prefix: str = "WHERE") -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    filters = spec.filters or {}
+
+    sales_property = filters.get("sales_property") or filters.get("msku_sales_property")
+    values = _as_list(sales_property)
+    if values:
+        placeholders = ", ".join(["%s"] * len(values))
+        clauses.append(f"msku_sales_property IN ({placeholders})")
+        params.extend(values)
+
+    if filters.get("risk_only"):
+        risk_fields = [f"fnsku_out_of_stock_risk_{index}" for index in range(1, 7)]
+        clauses.append(
+            "("
+            + " OR ".join(f"COALESCE({field}, '') NOT IN ('', '安全', '数据缺失')" for field in risk_fields)
+            + ")"
+        )
+
+    if filters.get("positive_demand"):
+        clauses.append("COALESCE(future_30d_sales, sale_quantity_30, sale_quantity_7, 0) > 0")
+
+    if not clauses:
+        return "", []
+    return f"{prefix} " + "\n              AND ".join(clauses), params
+
+
+def _order_sql(spec: QuerySpec) -> str:
+    order_by = str((spec.filters or {}).get("order_by") or "").strip().lower()
+    if order_by in {"demand_desc", "risk_then_demand"}:
+        return "ORDER BY COALESCE(future_30d_sales, sale_quantity_30, sale_quantity_7, 0) DESC"
+    return ""
+
+
+def _as_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = [str(item) for item in value]
+    else:
+        values = [str(value)]
+    allowed = {"爆", "旺", "平", "滞"}
+    return [item.strip() for item in values if item and item.strip() in allowed]
+
+
+def _bounded_limit(limit: int) -> int:
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        value = ALL_WAREHOUSE_CATALOG.default_limit
+    return max(1, min(value, 500))

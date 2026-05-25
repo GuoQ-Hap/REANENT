@@ -177,3 +177,44 @@ For a simple conversation UI, open `http://127.0.0.1:8765/chat.html`.
 - 状态流转会进入标准日志，事件名为 `state_transition`。
 - 模型交互会按类型和时间 ID 落盘：`logs/model_interactions/<interaction_type>/<time_id>.txt`。
 - `logs/` 已加入 `.gitignore`，用于本地测试和审计，不进入代码仓库。
+
+## Daily Memory Review
+
+Run the daily memory review from the repository root:
+
+```powershell
+$env:PYTHONPATH="src"; python -m pmc_agent.memory.daily_review
+```
+
+The review uses the configured project LLM to read `logs/model_interactions/conversations`, write a
+daily Markdown summary to `logs/memory_reviews/YYYY-MM-DD.md`, and append durable preference,
+feedback, rule-definition, and failure-lesson records to `logs/memory/memory_records.jsonl`.
+Realtime inventory quantities are intentionally kept out of long-term memory.
+
+Durable memory can also be written to a separate Milvus database and collection:
+
+```dotenv
+PMC_AGENT_MEMORY_MILVUS_ENABLED=true
+MILVUS_MEMORY_DATABASE=pmc_memory
+MILVUS_MEMORY_COLLECTION_NAME=pmc_agent_memory
+MILVUS_MEMORY_VECTOR_DIM=1024
+PMC_AGENT_MEMORY_EMBEDDING_MODEL=text-embedding-3-large
+PMC_AGENT_MEMORY_EMBEDDING_DIMENSIONS=1024
+```
+
+The normal knowledge/RAG collection continues to use `MILVUS_DATABASE` and
+`MILVUS_COLLECTION_NAME`; long-term agent memory uses the `MILVUS_MEMORY_*` namespace so the two
+libraries do not mix.
+
+To run the project's own daily scheduler process:
+
+```powershell
+$env:PYTHONPATH="src"; python -m pmc_agent.memory.scheduler
+```
+
+The scheduler runs once per day at `PMC_AGENT_MEMORY_REVIEW_TIME` from `.env`, defaulting to `18:00`.
+For a one-shot smoke test:
+
+```powershell
+$env:PYTHONPATH="src"; python -m pmc_agent.memory.scheduler --once
+```

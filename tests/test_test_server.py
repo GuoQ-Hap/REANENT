@@ -1,9 +1,25 @@
 import unittest
+import time
+import os
+import zipfile
+from datetime import date
+from decimal import Decimal
 
-from pmc_agent.test_server import LLM_MODULES, SCENARIOS, TEST_TARGETS, get_model_options, run_chat, run_llm_module, run_scenario, run_test_target
+from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticRunResult, AgenticStep
+from pmc_agent.test_server import LLM_MODULES, SCENARIOS, TEST_TARGETS, _agentic_attachments, _append_attachment_links, _to_jsonable, get_model_options, get_monitored_chat_run, run_chat, run_llm_module, run_scenario, run_test_target, start_monitored_chat
 
 
 class TestServerTests(unittest.TestCase):
+    def setUp(self):
+        self._old_db_enabled = os.environ.get("STI_DB_ENABLED")
+        os.environ["STI_DB_ENABLED"] = "false"
+
+    def tearDown(self):
+        if self._old_db_enabled is None:
+            os.environ.pop("STI_DB_ENABLED", None)
+        else:
+            os.environ["STI_DB_ENABLED"] = self._old_db_enabled
+
     def test_test_targets_cover_current_modules(self):
         ids = {item["id"] for item in TEST_TARGETS}
 
@@ -39,6 +55,11 @@ class TestServerTests(unittest.TestCase):
         self.assertTrue(result["default_model"])
         self.assertIn(result["default_model"], result["options"])
 
+    def test_to_jsonable_handles_database_decimal_and_date_values(self):
+        result = _to_jsonable({"qty": Decimal("12.50"), "day": date(2026, 5, 22)})
+
+        self.assertEqual(result, {"qty": 12.5, "day": "2026-05-22"})
+
     def test_run_unknown_test_returns_error(self):
         result = run_test_target("missing")
 
@@ -68,7 +89,72 @@ class TestServerTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertIn("A100", result["reply"])
+        self.assertIn("| 物料编码", result["reply"])
+        self.assertIn("**计算逻辑**", result["reply"])
+        self.assertEqual(result["ui"]["tables"][0]["id"], "query_result")
         self.assertEqual(result["mode"], "local_heuristic")
+
+    def test_run_chat_creates_excel_attachment_only_when_requested(self):
+        normal = run_chat({"text": "检查 A100 是否有缺料风险"})
+        with_attachment = run_chat({"text": "检查 A100 是否有缺料风险，并导出 Excel 附件"})
+
+        self.assertNotIn("attachments", normal["result"]["artifacts"])
+        attachments = with_attachment["result"]["artifacts"]["attachments"]
+        self.assertTrue(attachments)
+        self.assertIn("附件", with_attachment["reply"])
+        path = attachments[0]["path"]
+        self.assertTrue(zipfile.is_zipfile(path))
+
+    def test_agentic_result_creates_excel_attachment_link_when_requested(self):
+        result = AgenticRunResult(
+            ok=True,
+            reply="已查询到库存明细。",
+            model="test-model",
+            steps=[
+                AgenticStep(
+                    iteration=1,
+                    decision=AgenticDecision(action=AgenticAction.QUERY_INVENTORY_SNAPSHOT),
+                    observation={
+                        "snapshots": [
+                            {
+                                "material_code": "A100",
+                                "warehouse": "IC-CA",
+                                "country": "加拿大",
+                                "on_hand": Decimal("25"),
+                                "sales_7d": Decimal("0.86"),
+                            }
+                        ],
+                    },
+                )
+            ],
+        )
+
+        attachments = _agentic_attachments(result, "请导出 xlsx 下载", "unit_test_agentic_attachment")
+        reply = _append_attachment_links(result.reply, attachments)
+
+        self.assertTrue(attachments)
+        self.assertIn("附件下载", reply)
+        self.assertIn(attachments[0]["url"], reply)
+        self.assertTrue(zipfile.is_zipfile(attachments[0]["path"]))
+
+    def test_agentic_result_can_export_markdown_table_reply(self):
+        result = AgenticRunResult(
+            ok=True,
+            reply="| 店铺 | 国家 | 可用库存 |\n|---|---|---|\n| IC-CA | 加拿大 | 25 |",
+            model="test-model",
+            steps=[
+                AgenticStep(
+                    iteration=1,
+                    decision=AgenticDecision(action=AgenticAction.FINAL_ANSWER),
+                    observation={"ok": True, "message": "final"},
+                )
+            ],
+        )
+
+        attachments = _agentic_attachments(result, "xlsx 下载", "unit_test_agentic_markdown_attachment")
+
+        self.assertTrue(attachments)
+        self.assertTrue(zipfile.is_zipfile(attachments[0]["path"]))
 
     def test_run_chat_greeting_does_not_run_agent(self):
         result = run_chat({"text": "你好"})
@@ -77,6 +163,26 @@ class TestServerTests(unittest.TestCase):
         self.assertEqual(result["mode"], "local_heuristic")
         self.assertEqual(result["result"]["plan"]["task_type"], "simple_chat")
         self.assertIn("你好", result["reply"])
+
+    def test_monitored_chat_exposes_runtime_events(self):
+        started = start_monitored_chat({"text": "检查 A100 是否有缺料风险"})
+
+        self.assertTrue(started["ok"])
+        run_id = started["run_id"]
+        status = get_monitored_chat_run(run_id)
+        for _ in range(20):
+            if status["status"] in {"completed", "failed"}:
+                break
+            time.sleep(0.02)
+            status = get_monitored_chat_run(run_id)
+
+        self.assertEqual(status["status"], "completed")
+        self.assertTrue(status["events"])
+        event_names = [item["event"] for item in status["events"]]
+        self.assertIn("route_started", event_names)
+        self.assertIn("route_node_completed", event_names)
+        self.assertIn("final_returned", event_names)
+        self.assertIn("A100", status["result"]["reply"])
 
 
 if __name__ == "__main__":

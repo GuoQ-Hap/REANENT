@@ -7,6 +7,7 @@ from pmc_agent.app_logging import get_logger, log_extra
 from pmc_agent.connectors.base import BusinessSystemConnector
 from pmc_agent.config import InventoryPolicy
 from pmc_agent.domain import CaseRecord, ControlDecision, InventorySnapshot, Material, RiskLevel, RiskSignal
+from pmc_agent.schema_catalog import FieldPack
 
 
 logger = get_logger(__name__)
@@ -61,12 +62,15 @@ class InventorySnapshotTool:
     name: str = "inventory_snapshot"
     description: str = "Return inventory and demand snapshot for a material."
 
-    def run(self, material_code: str | None = None, **_: Any) -> list[InventorySnapshot]:
+    def run(self, material_code: str | None = None, field_pack: FieldPack | str | None = None, **_: Any) -> list[InventorySnapshot]:
         if self.connector:
-            snapshots = self.connector.get_inventory_snapshot(material_code)
+            try:
+                snapshots = self.connector.get_inventory_snapshot(material_code, field_pack=field_pack)
+            except TypeError:
+                snapshots = self.connector.get_inventory_snapshot(material_code)
             logger.info(
                 "inventory snapshot returned from connector",
-                extra=log_extra("inventory_snapshot_connector_returned", material_code=material_code or "-", result_size=len(snapshots)),
+                extra=log_extra("inventory_snapshot_connector_returned", material_code=material_code or "-", result_size=len(snapshots), field_pack=str(field_pack or "-")),
             )
             return snapshots
         if material_code:
@@ -317,10 +321,16 @@ class ExceptionCaseTool:
 
 @dataclass
 class KnowledgeLookupTool:
+    connector: Any | None = None
     name: str = "knowledge_lookup"
     description: str = "Return rule and SOP knowledge snippets."
 
-    def run(self, query: str = "", **_: Any) -> list[dict[str, str]]:
+    def run(self, query: str = "", query_vector: list[float] | None = None, limit: int = 5, **_: Any) -> list[dict[str, Any]]:
+        if self.connector:
+            snippets = self.connector.search(query=query, query_vector=query_vector, limit=limit)
+            if snippets:
+                logger.info("knowledge snippets returned from connector", extra=log_extra("knowledge_lookup_connector_completed", result_size=len(snippets), query_present=bool(query)))
+                return snippets
         snippets = [
             {"title": "Inventory bottom table fields", "content": "Explain fields from ads_lingxing_all_warehouse_new_v1 and forecast tables."},
             {"title": "Shipment verification rules", "content": "Explain base shipment, correction quantity, reference quantity, and delta reasons."},
