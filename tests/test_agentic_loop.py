@@ -3,7 +3,7 @@ import unittest
 from datetime import date
 from decimal import Decimal
 
-from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticPmcLoop
+from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticPmcLoop, _parse_agentic_decision_response
 from pmc_agent.domain import InventorySnapshot
 
 
@@ -50,6 +50,46 @@ class FakeDbConnector:
                 metadata={"decimal_value": Decimal("12.50"), "snapshot_date": date(2026, 5, 22)},
             )
         ]
+
+
+class AgenticFunctionCallParsingTests(unittest.TestCase):
+    def test_parse_business_function_call_as_decision(self):
+        response = {
+            "output": [
+                {
+                    "type": "function_call",
+                    "name": "query_inventory_snapshot",
+                    "arguments": json.dumps(
+                        {
+                            "material_code": "B0BXD4MCCK",
+                            "field_pack": "inventory_snapshot",
+                            "reasoning_summary": "Need the snapshot first.",
+                        }
+                    ),
+                }
+            ]
+        }
+
+        decision = _parse_agentic_decision_response(response)
+
+        self.assertEqual(decision.action, AgenticAction.QUERY_INVENTORY_SNAPSHOT)
+        self.assertEqual(decision.arguments["material_code"], "B0BXD4MCCK")
+        self.assertEqual(decision.reasoning_summary, "Need the snapshot first.")
+        self.assertNotIn("reasoning_summary", decision.arguments)
+
+    def test_quota_marker_only_is_clear_error(self):
+        response = {
+            "output": [
+                {
+                    "type": "function_call",
+                    "name": "quota_soft_limit_marker",
+                    "arguments": "{}",
+                }
+            ]
+        }
+
+        with self.assertRaisesRegex(ValueError, "quota_soft_limit_marker"):
+            _parse_agentic_decision_response(response)
 
 
 class LoopingPlanner:
@@ -271,6 +311,41 @@ class FakeKnowledgeTool:
         return [{"title": "采购校验规则", "content": "按 MOQ、箱规和需求规则复核。"}]
 
 
+class FakeGraphMetadataTool:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "mode": kwargs["query_type"],
+            "table_name": kwargs.get("table_name", ""),
+            "fields": [
+                {
+                    "table": kwargs.get("table_name", ""),
+                    "field": "fnsku",
+                    "comment": "FNSKU",
+                    "concepts": ["FNSKU"],
+                }
+            ],
+            "row_count": 1,
+        }
+
+
+class FakeMemoryLookupTool:
+    def __init__(self):
+        self.calls = []
+
+    def run(self, **kwargs):
+        self.calls.append(kwargs)
+        return {
+            "mode": "memory_lookup",
+            "query": kwargs.get("query", ""),
+            "memories": [{"summary": "采购建议需要展示 MOQ 和人工确认边界。"}],
+            "memory_count": 1,
+        }
+
+
 class KnowledgeLookupPlanner:
     def __init__(self):
         self.calls = 0
@@ -287,6 +362,48 @@ class KnowledgeLookupPlanner:
             action=AgenticAction.FINAL_ANSWER,
             final_text="已检索采购校验规则并完成回答。",
             reasoning_summary="Knowledge snippets are enough.",
+        )
+
+
+class MemoryLookupPlanner:
+    def __init__(self):
+        self.calls = 0
+
+    def decide_next(self, messages, metadata=None):
+        self.calls += 1
+        if self.calls == 1:
+            return AgenticDecision(
+                action=AgenticAction.MEMORY_LOOKUP,
+                arguments={"query": "采购建议偏好 MOQ 人工确认", "limit": 5},
+                reasoning_summary="Need durable preferences before answering.",
+            )
+        return AgenticDecision(
+            action=AgenticAction.FINAL_ANSWER,
+            final_text="已按长期记忆补充 MOQ 和人工确认边界。",
+            reasoning_summary="Memory is enough.",
+        )
+
+
+class GraphMetadataPlanner:
+    def __init__(self):
+        self.calls = 0
+
+    def decide_next(self, messages, metadata=None):
+        self.calls += 1
+        if self.calls == 1:
+            return AgenticDecision(
+                action=AgenticAction.GRAPH_METADATA_LOOKUP,
+                arguments={
+                    "query_type": "describe_table",
+                    "table_name": "dwd_lingxing_fba_warehouse_detail",
+                    "limit": 20,
+                },
+                reasoning_summary="Need table fields from Neo4j metadata graph.",
+            )
+        return AgenticDecision(
+            action=AgenticAction.FINAL_ANSWER,
+            final_text="已查询 FBA 库存明细表字段。",
+            reasoning_summary="Graph metadata is enough.",
         )
 
 
@@ -485,6 +602,49 @@ class AgenticLoopTests(unittest.TestCase):
         self.assertEqual(knowledge_tool.queries, ["采购校验规则"])
         self.assertEqual(result.steps[0].decision.action, AgenticAction.KNOWLEDGE_LOOKUP)
         self.assertEqual(result.steps[0].observation["snippet_count"], 1)
+
+    def test_memory_lookup_action_is_available_to_agentic_loop(self):
+        memory_tool = FakeMemoryLookupTool()
+        loop = AgenticPmcLoop(
+            planner=MemoryLookupPlanner(),
+            model="test-model",
+            memory_lookup_tool=memory_tool,
+        )
+
+        result = loop.run("采购建议按我之前的偏好来")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.steps[0].decision.action, AgenticAction.MEMORY_LOOKUP)
+        self.assertEqual(memory_tool.calls[0]["query"], "采购建议偏好 MOQ 人工确认")
+        self.assertEqual(result.steps[0].observation["memory_count"], 1)
+
+    def test_graph_metadata_lookup_action_is_available_to_agentic_loop(self):
+        graph_tool = FakeGraphMetadataTool()
+        loop = AgenticPmcLoop(
+            planner=GraphMetadataPlanner(),
+            model="test-model",
+            graph_metadata_tool=graph_tool,
+        )
+
+        result = loop.run("dwd_lingxing_fba_warehouse_detail 这张表有哪些字段")
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.steps[0].decision.action, AgenticAction.GRAPH_METADATA_LOOKUP)
+        self.assertEqual(graph_tool.calls[0]["query_type"], "describe_table")
+        self.assertEqual(graph_tool.calls[0]["table_name"], "dwd_lingxing_fba_warehouse_detail")
+        self.assertEqual(result.steps[0].observation["row_count"], 1)
+
+    def test_graph_metadata_tool_normalizes_missing_concept_from_keyword(self):
+        from pmc_agent.tools.graph_metadata import GraphMetadataTool
+
+        class NormalizingGraphTool(GraphMetadataTool):
+            def _execute(self, cypher, parameters):
+                return [{"table": "demo", "matched_fields": ["fnsku"], "concept": parameters["concept"]}]
+
+        result = NormalizingGraphTool().run(query_type="find_tables_by_concept", keyword="哪些表有FNSKU字段")
+
+        self.assertEqual(result["concept"], "FNSKU")
+        self.assertEqual(result["row_count"], 1)
 
     def test_self_review_failure_can_inspect_trace_and_retry_within_budget(self):
         planner = SelfReviewRetryPlanner()

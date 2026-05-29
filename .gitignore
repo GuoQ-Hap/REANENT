@@ -6,3 +6,8 @@ __pycache__/
 tmp/
 logs/
 web/generated/
+.idea/
+node_modules/
+output/
+outputs/
+.pytest_cache/

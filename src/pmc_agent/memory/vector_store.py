@@ -90,6 +90,46 @@ class MilvusMemoryStore:
         )
         return len(rows)
 
+    def search(self, query: str, query_vector: list[float] | None = None, limit: int = 5) -> list[dict[str, Any]]:
+        query = str(query or "").strip()
+        if not query:
+            return []
+        if not self.config.ready:
+            logger.info("memory milvus search disabled", extra=log_extra("memory_milvus_search_disabled"))
+            return []
+        collection = self._get_collection()
+        if query_vector is None:
+            if self.embedding_client is None:
+                self.embedding_client = OpenAIEmbeddingClient()
+            query_vector = self.embedding_client.embed(query)
+        if len(query_vector) != self.config.milvus.vector_dim:
+            raise ValueError(f"memory query embedding dimension {len(query_vector)} does not match MILVUS_MEMORY_VECTOR_DIM={self.config.milvus.vector_dim}.")
+        output_fields = [
+            "id",
+            "memory_type",
+            "scope",
+            "subject_type",
+            "subject_id",
+            "summary",
+            "content",
+            "tags_json",
+            "entities_json",
+            "source_request_id",
+            "confidence",
+            "status",
+            "updated_at",
+        ]
+        results = collection.search(
+            data=[query_vector],
+            anns_field=self.config.milvus.vector_field,
+            param={"metric_type": "COSINE", "params": {"nprobe": 10}},
+            limit=max(1, min(int(limit or 5), 20)),
+            output_fields=output_fields,
+        )
+        rows = [_memory_hit_to_result(hit, output_fields) for hit in (results[0] if results else [])]
+        logger.info("memory milvus search completed", extra=log_extra("memory_milvus_search_completed", result_size=len(rows)))
+        return rows
+
     def _record_to_row(self, record: MemoryRecord) -> dict[str, Any]:
         text = _embedding_text(record)
         if self.embedding_client is None:
@@ -201,3 +241,50 @@ def _embedding_text(record: MemoryRecord) -> str:
     if record.entities:
         parts.append(f"entities: {json.dumps(record.entities, ensure_ascii=False, sort_keys=True)}")
     return "\n".join(parts)
+
+
+def _memory_hit_to_result(hit: Any, output_fields: list[str]) -> dict[str, Any]:
+    entity = getattr(hit, "entity", None)
+    data: dict[str, Any] = {}
+    for field in output_fields:
+        try:
+            data[field] = entity.get(field) if entity is not None else None
+        except Exception:
+            data[field] = None
+    return {
+        "id": str(data.get("id") or getattr(hit, "id", "")),
+        "memory_type": str(data.get("memory_type") or ""),
+        "scope": str(data.get("scope") or ""),
+        "subject_type": str(data.get("subject_type") or ""),
+        "subject_id": str(data.get("subject_id") or ""),
+        "summary": str(data.get("summary") or ""),
+        "content": str(data.get("content") or ""),
+        "tags": _json_list(data.get("tags_json")),
+        "entities": _json_dict(data.get("entities_json")),
+        "source_request_id": str(data.get("source_request_id") or ""),
+        "confidence": float(data.get("confidence") or 0.0),
+        "status": str(data.get("status") or ""),
+        "updated_at": str(data.get("updated_at") or ""),
+        "score": float(getattr(hit, "score", 0.0) or 0.0),
+        "retrieval_source": "milvus",
+    }
+
+
+def _json_list(value: Any) -> list[str]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item) for item in parsed]
+
+
+def _json_dict(value: Any) -> dict[str, str]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    return {str(key): str(item) for key, item in parsed.items()}

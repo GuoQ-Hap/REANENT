@@ -75,6 +75,26 @@ class ResponseFormatterTests(unittest.TestCase):
         self.assertEqual(ui["tables"][0]["id"], "agentic_observation_result")
         self.assertEqual(ui["tables"][0]["rows"][0]["material_code"], "A100")
 
+    def test_agentic_ui_prefers_observation_table_over_markdown_table(self):
+        result = AgenticRunResult(
+            ok=True,
+            reply="说明\n\n| 物料编码 | 当前总库存 |\n|---|---|\n| A100 | 25 |\n\n计算逻辑\n1. 可用库存 = 总库存 - 占用",
+            model="test-model",
+            steps=[
+                AgenticStep(
+                    iteration=1,
+                    decision=AgenticDecision(action=AgenticAction.QUERY_INVENTORY_SNAPSHOT),
+                    observation={"snapshots": [{"material_code": "A100", "warehouse": "IC-CA", "on_hand": 25}]},
+                )
+            ],
+        )
+
+        ui = build_agentic_result_ui(result)
+
+        self.assertEqual(len(ui["tables"]), 1)
+        self.assertEqual(ui["tables"][0]["id"], "agentic_observation_result")
+        self.assertEqual(ui["calculations"], ["可用库存 = 总库存 - 占用"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,6 +21,32 @@ class FakeCollection:
     def flush(self):
         self.flushed = True
 
+    def search(self, data, anns_field, param, limit, output_fields):
+        class FakeEntity:
+            def get(self, field):
+                return {
+                    "id": "m1",
+                    "memory_type": "case_lesson",
+                    "scope": "project",
+                    "subject_type": "playbook",
+                    "subject_id": "inventory_snapshot",
+                    "summary": "库存缺失保守处理",
+                    "content": "库存快照缺失时不要编造。",
+                    "tags_json": "[\"failure\"]",
+                    "entities_json": "{\"tool\":\"inventory_snapshot\"}",
+                    "source_request_id": "req-1",
+                    "confidence": 0.8,
+                    "status": "active",
+                    "updated_at": "2026-05-29T00:00:00+00:00",
+                }.get(field)
+
+        class FakeHit:
+            id = "m1"
+            score = 0.91
+            entity = FakeEntity()
+
+        return [[FakeHit()]]
+
 
 class FakeMilvusMemoryStore(MilvusMemoryStore):
     def __init__(self, config, embedding_client):
@@ -85,6 +111,31 @@ class MemoryVectorStoreTests(unittest.TestCase):
         self.assertEqual(store.collection.rows[0]["id"], "m1")
         self.assertEqual(store.collection.rows[0]["embedding"], [0.1, 0.2, 0.3])
         self.assertIn("entities_json", store.collection.rows[0])
+
+    def test_milvus_store_search_returns_memory_results(self):
+        config = MemoryMilvusConfig(
+            milvus=MilvusConfig(
+                host="localhost",
+                port=19530,
+                uri="",
+                user="",
+                password="",
+                database="pmc_memory",
+                timeout=1,
+                collection_name="pmc_agent_memory",
+                vector_dim=3,
+                secure=False,
+                alias="memory_test",
+            ),
+            enabled=True,
+        )
+        store = FakeMilvusMemoryStore(config=config, embedding_client=FakeEmbeddingClient())
+
+        rows = store.search("库存缺失", limit=3)
+
+        self.assertEqual(rows[0]["id"], "m1")
+        self.assertEqual(rows[0]["retrieval_source"], "milvus")
+        self.assertEqual(rows[0]["entities"]["tool"], "inventory_snapshot")
 
 
 if __name__ == "__main__":

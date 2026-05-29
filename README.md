@@ -1,6 +1,6 @@
 # PMC Inventory Supply Chain Control Agent
 
-This repository is a first-pass framework for a PMC supply chain control agent. It is intentionally small: the core loop is separated from model providers, ERP/MES/WMS connectors, and UI layers so each part can be replaced safely.
+This repository is a first-pass framework for a PMC supply chain control agent. It is intentionally small: the deterministic core loop is separated from model providers, ERP/MES/WMS connectors, and UI layers so each part can be replaced safely. A model-driven chat loop is also available for whitelisted multi-step tool orchestration.
 
 ## What This Framework Covers
 
@@ -10,6 +10,10 @@ This repository is a first-pass framework for a PMC supply chain control agent. 
 - A deterministic inventory-control baseline for early validation.
 - CLI entry point for local smoke tests.
 - Optional FastAPI entry point for integration later.
+- Model-driven chat orchestration with read-only tool execution boundaries.
+- Runtime logging, model interaction records, and daily memory review.
+- Neo4j-backed table/field metadata graph for data-map lookups.
+- Online durable memory lookup from local JSONL records, with daily Milvus memory writes available.
 
 ## Architecture
 
@@ -24,12 +28,14 @@ User / System Trigger
   -> Response
 ```
 
-## Suggested Next Integrations
+## Current Integration Status
 
-- Data warehouse: `ads_lingxing_all_warehouse_new_v1`, `dim_inventory_forecast_v1`, `dim_inventory_forecast_v1_fh`, sales daily, FBA inventory, domestic warehouse inventory.
-- Rule Excel files: stocking rules, reorder quantity, carton size, supplier data, logistics rules.
-- Business workflows: PMC confirmation, purchase confirmation, logistics confirmation, operations impact review.
-- LLM provider: the intent recognizer is already model-backed; next, extend model use into multi-step tool-calling orchestration.
+- Data warehouse: the read-only STI connector can query inventory snapshots from `ads_lingxing_all_warehouse_new_v1`. Additional warehouse, forecast, sales, FBA, and domestic-stock tables are documented for later expansion.
+- Rule Excel files: stocking rules, reorder quantity, carton size, supplier data, and logistics rules are not yet wired into the calculation engine.
+- Business workflows: purchase advice, weekly shipment plans, and exception cases are generated as drafts that require human confirmation. Full PMC, purchase, logistics, and operations approval workflows are still integration work.
+- LLM provider: intent recognition, model routing, failure handling, and model-driven tool orchestration are implemented. Future work should focus on richer tool schemas, more real data sources, and stronger approval boundaries.
+- Knowledge graph: Neo4j can store the data-warehouse schema graph, including database layers, tables, fields, business concepts, business categories, and supplemented `v1` field comments. The graph is metadata only; realtime inventory quantities remain in the data warehouse.
+- Memory: daily review writes durable memories to local JSONL and optionally Milvus. Online `memory_lookup` uses Milvus vector recall first when configured, then falls back to the auditable JSONL store.
 
 See [docs/requirements_extracted.md](docs/requirements_extracted.md) for the extracted project requirements from the rendered PDF.
 See [docs/llm_working_standard.md](docs/llm_working_standard.md) for the working standard used by future LLM-assisted development.
@@ -99,6 +105,7 @@ PMC_AGENT_MODEL_DEFAULT=gpt-5.4-mini
 PMC_AGENT_MODEL_INTENT_RECOGNITION=gpt-5.4-mini
 PMC_AGENT_MODEL_GOAL_REPAIR=gpt-5.4
 PMC_AGENT_MODEL_TOOL_ORCHESTRATION=gpt-5.4
+PMC_AGENT_MODEL_CONTEXT_SELECTION=gpt-5.4-mini
 PMC_AGENT_MODEL_FAILURE_HANDLING=gpt-5.4
 PMC_AGENT_MODEL_BUSINESS_EXPLANATION=gpt-5.4
 PMC_AGENT_MODEL_SUMMARY=gpt-5.4-mini
@@ -114,7 +121,13 @@ STI_DB_USER=
 STI_DB_PASSWORD=
 STI_DB_NAME=dw_leang
 STI_DB_CHARSET=utf8mb4
+NEO4J_URI=bolt://10.0.10.106:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=
+NEO4J_DATABASE=neo4j
 ```
+
+If these model environment variables are omitted, `pmc_agent.model_router` falls back to its built-in defaults. The checked-in `.env.example` is the recommended project-level override template.
 
 Use the CLI commands from [Startup Commands](#startup-commands) after `.env` is configured.
 
@@ -124,9 +137,37 @@ The `--feedback` option turns on a lightweight goal loop. The first iteration ru
 
 Set `STI_DB_ENABLED=true` in `.env` to use the read-only STI data warehouse connector. The current implementation reads inventory snapshots from `ads_lingxing_all_warehouse_new_v1`.
 
-When the database connector is enabled, query failures and empty results are treated as real failures and returned to the caller. Demo data is used only when the database connector is disabled.
+When the database connector is enabled, query failures and empty results are treated as real failures. In the deterministic agent loop, failures can be passed to the failure-handling model and returned as a `failure_decision` artifact; demo data is used only when the database connector is disabled.
 
 The connector only performs `SELECT` queries. Control advice and exception handling remain draft outputs inside the agent and are not written back to the database.
+
+## Neo4j Metadata Graph
+
+Neo4j is used as a data-map layer, not as a replacement for the warehouse. It stores:
+
+- `Database -> DataLayer -> DataTable -> DataField`
+- `DataField -> FieldConcept`, such as `FNSKU`, `MSKU`, `InventoryQuantity`, `Sales`, `Forecast`
+- `DataTable -> BusinessCategory`
+
+Import the warehouse schema metadata:
+
+```powershell
+$env:PYTHONPATH="src"; python scripts\import_schema_to_neo4j.py --clear
+```
+
+Synchronize live `v1` table fields and supplement safe field comments:
+
+```powershell
+$env:PYTHONPATH="src"; python scripts\sync_v1_schema_comments.py
+```
+
+The model can use `graph_metadata_lookup` for controlled read-only lookups:
+
+- `describe_table`: list fields for an exact table name.
+- `find_tables_by_concept`: find tables containing a concept such as `FNSKU` or `Forecast`.
+- `find_fields`: search field names and Chinese comments.
+
+The tool caps metadata results at 200 rows per call.
 
 ## Model Routing
 
@@ -136,7 +177,8 @@ Current action routes:
 
 - `intent_recognition`: understand the user's request and classify task type.
 - `goal_repair`: revise the goal after user feedback.
-- `tool_orchestration`: choose or sequence tool calls in future dynamic loops.
+- `tool_orchestration`: choose or sequence tool calls in dynamic model-driven loops.
+- `context_selection`: decide whether hidden recent conversation context is needed.
 - `failure_handling`: decide how to respond when a real tool or database query fails.
 - `business_explanation`: produce higher-stakes business explanations.
 - `summary`: compress observations and execution output.
@@ -153,8 +195,14 @@ The chat frontend uses two modes:
 
 Current whitelisted model actions:
 
+- `decide_context`: decide whether hidden recent conversation context is needed.
+- `inspect_run_trace`: inspect compact prompts, observations, failed drafts, and action history after self-review fails.
+- `run_serial_space`: execute an ordered list of subtasks; tool subtasks run serially, and model-behavior subtasks can run in parallel groups.
 - `query_inventory_snapshot`: read inventory snapshots from the read-only STI connector.
 - `evaluate_inventory_risk`: calculate risk from the latest returned snapshots.
+- `knowledge_lookup`: search SOP, rule, and vector knowledge snippets.
+- `memory_lookup`: retrieve durable user preferences, manual feedback, business rules, and failure lessons from local JSONL memory.
+- `graph_metadata_lookup`: query Neo4j table/field metadata; it does not return realtime inventory quantities.
 - `ask_user`: ask for missing code, scope, or confirmation.
 - `final_answer`: return the final answer to the user.
 
@@ -175,7 +223,7 @@ For a simple conversation UI, open `http://127.0.0.1:8765/chat.html`.
 ## Runtime Records
 
 - 状态流转会进入标准日志，事件名为 `state_transition`。
-- 模型交互会按类型和时间 ID 落盘：`logs/model_interactions/<interaction_type>/<time_id>.txt`。
+- 模型交互会按一次用户对话聚合落盘：`logs/model_interactions/conversations/<request_id>.txt`。单个文件内的每条 interaction 会记录 `interaction_type`、输入、输出和错误信息。
 - `logs/` 已加入 `.gitignore`，用于本地测试和审计，不进入代码仓库。
 
 ## Daily Memory Review
@@ -190,6 +238,12 @@ The review uses the configured project LLM to read `logs/model_interactions/conv
 daily Markdown summary to `logs/memory_reviews/YYYY-MM-DD.md`, and append durable preference,
 feedback, rule-definition, and failure-lesson records to `logs/memory/memory_records.jsonl`.
 Realtime inventory quantities are intentionally kept out of long-term memory.
+
+Online agent runs can use `memory_lookup` to retrieve durable memories. When
+`PMC_AGENT_MEMORY_MILVUS_ENABLED=true` and the memory collection is reachable,
+the tool searches Milvus first; if Milvus is disabled, empty, or unavailable, it
+falls back to `logs/memory/memory_records.jsonl`. Realtime inventory quantities
+must still stay out of long-term memory.
 
 Durable memory can also be written to a separate Milvus database and collection:
 

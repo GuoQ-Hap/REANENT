@@ -165,17 +165,18 @@ def build_agentic_result_ui(result: Any) -> dict[str, Any]:
                 "rows": [{key: row.get(key) for key in keys} for row in observation_rows],
             }
         )
-    for index, table in enumerate(_extract_markdown_tables(str(getattr(result, "reply", "") or "")), start=1):
-        columns = [{"key": key, "label": key, "meaning": FIELD_MEANINGS.get(key, key), "align": _column_align(key)} for key in table["headers"]]
-        tables.append(
-            {
-                "id": f"model_table_{index}",
-                "title": "查询结果" if index == 1 and not observation_rows else f"结果表 {index}",
-                "description": "模型按固定表格组件展示的本轮结果。",
-                "columns": columns,
-                "rows": table["rows"],
-            }
-        )
+    if not observation_rows:
+        for index, table in enumerate(_extract_markdown_tables(str(getattr(result, "reply", "") or "")), start=1):
+            columns = [{"key": key, "label": key, "meaning": FIELD_MEANINGS.get(key, key), "align": _column_align(key)} for key in table["headers"]]
+            tables.append(
+                {
+                    "id": f"model_table_{index}",
+                    "title": "查询结果" if index == 1 else f"结果表 {index}",
+                    "description": "模型按固定表格组件展示的本轮结果。",
+                    "columns": columns,
+                    "rows": table["rows"],
+                }
+            )
     return {"tables": tables, "calculations": _extract_calculation_items(str(getattr(result, "reply", "") or ""))}
 
 

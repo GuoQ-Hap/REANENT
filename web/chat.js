@@ -8,6 +8,7 @@ const runtimeBadge = document.querySelector("#runtimeBadge");
 const routeStrip = document.querySelector("#routeStrip");
 const recentContext = [];
 let activePoll = null;
+let activeTableModal = null;
 
 function addMessage(role, text) {
   const item = document.createElement("article");
@@ -41,7 +42,7 @@ function renderAssistantResult(bubble, result, reply) {
   bubble.textContent = "";
   const ui = result?.ui || {};
   const hasStructured = Boolean(ui.tables?.length || ui.calculations?.length);
-  const displayText = hasStructured ? cleanReplyText(reply || "") : reply || "";
+  const displayText = hasStructured ? cleanReplyText(reply || "", Boolean(ui.calculations?.length)) : reply || "";
   if (displayText) {
     const textBlock = document.createElement("div");
     textBlock.className = "reply-text";
@@ -49,12 +50,7 @@ function renderAssistantResult(bubble, result, reply) {
     bubble.appendChild(textBlock);
   }
   if (ui.tables?.length) {
-    const stack = document.createElement("div");
-    stack.className = "structured-stack";
-    for (const table of ui.tables) {
-      stack.appendChild(createStructuredTable(table));
-    }
-    bubble.appendChild(stack);
+    bubble.appendChild(createTablePreview(ui.tables));
   }
   if (ui.calculations?.length) {
     bubble.appendChild(createCalculationBlock(ui.calculations));
@@ -65,6 +61,74 @@ function renderAssistantResult(bubble, result, reply) {
   }
 }
 
+function createTablePreview(tables) {
+  const preview = document.createElement("section");
+  preview.className = "result-preview";
+  const summary = document.createElement("span");
+  summary.textContent = tables.length === 1 ? "查询结果已生成" : `查询结果已生成 ${tables.length} 张表`;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "result-preview-button";
+  button.textContent = "查看查询结果";
+  button.addEventListener("click", () => openTableModal(tables));
+  preview.append(summary, button);
+  return preview;
+}
+
+function openTableModal(tables) {
+  closeTableModal();
+
+  const overlay = document.createElement("div");
+  overlay.className = "table-modal-overlay";
+  overlay.addEventListener("click", (event) => {
+    if (event.target === overlay) closeTableModal();
+  });
+
+  const dialog = document.createElement("section");
+  dialog.className = "table-modal";
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-labelledby", "tableModalTitle");
+
+  const header = document.createElement("div");
+  header.className = "table-modal-header";
+  const title = document.createElement("strong");
+  title.id = "tableModalTitle";
+  title.textContent = tables.length === 1 ? "查询结果" : `查询结果（${tables.length} 张表）`;
+  const closeButton = document.createElement("button");
+  closeButton.type = "button";
+  closeButton.className = "table-modal-close";
+  closeButton.setAttribute("aria-label", "关闭查询结果");
+  closeButton.textContent = "×";
+  closeButton.addEventListener("click", closeTableModal);
+  header.append(title, closeButton);
+
+  const body = document.createElement("div");
+  body.className = "table-modal-body";
+  const stack = document.createElement("div");
+  stack.className = "structured-stack";
+  for (const table of tables) {
+    stack.appendChild(createStructuredTable(table));
+  }
+  body.appendChild(stack);
+
+  dialog.append(header, body);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+  activeTableModal = overlay;
+  closeButton.focus();
+}
+
+function closeTableModal() {
+  if (!activeTableModal) return;
+  activeTableModal.remove();
+  activeTableModal = null;
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeTableModal();
+});
+
 function renderTextLines(container, text) {
   const lines = text.split(/\n{2,}/).map((line) => line.trim()).filter(Boolean);
   for (const line of lines) {
@@ -74,9 +138,10 @@ function renderTextLines(container, text) {
   }
 }
 
-function cleanReplyText(text) {
+function cleanReplyText(text, removeCalculations = false) {
   const lines = [];
   let inTable = false;
+  let inCalculationBlock = false;
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
     if (line.startsWith("|") && line.endsWith("|")) {
@@ -84,10 +149,30 @@ function cleanReplyText(text) {
       continue;
     }
     if (inTable) inTable = false;
-    if (/^\*\*(查询结果|建议动作|附件)\*\*$/.test(line)) continue;
+    if (removeCalculations && isCalculationHeading(line)) {
+      inCalculationBlock = true;
+      continue;
+    }
+    if (inCalculationBlock) {
+      if (!line || isCalculationListItem(line)) continue;
+      if (!isSectionHeading(line)) inCalculationBlock = false;
+    }
+    if (/^\*\*(查询结果|建议动作|附件|计算逻辑)\*\*$/.test(line)) continue;
     lines.push(rawLine);
   }
   return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function isCalculationHeading(line) {
+  return /^(?:#{1,6}\s*)?(?:\*\*)?计算逻辑(?:\*\*)?(?:\s*[:：].*|\s*)$/.test(line);
+}
+
+function isSectionHeading(line) {
+  return /^(?:#{1,6}\s+|\*\*[^*]+\*\*$)/.test(line);
+}
+
+function isCalculationListItem(line) {
+  return /^(?:[-*]|\d+[.、)]|[（(]?\d+[）)])\s*\S+/.test(line);
 }
 
 function stripMarkdownMarks(text) {

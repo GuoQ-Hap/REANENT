@@ -18,11 +18,13 @@ from pmc_agent.connectors.database import StiDatabaseConnector
 from pmc_agent.connectors.vector_database import MilvusVectorConnector
 from pmc_agent.domain import InventorySnapshot
 from pmc_agent.env import load_env_file
+from pmc_agent.memory.lookup import MemoryLookupTool
 from pmc_agent.model import _extract_response_text
 from pmc_agent.model_io import generate_time_id, record_model_interaction
 from pmc_agent.model_router import ModelAction, ModelRouteRequest, ModelRouter
 from pmc_agent.query_spec import QuerySpec
 from pmc_agent.schema_catalog import FieldPack, normalize_field_pack
+from pmc_agent.tools.graph_metadata import GraphMetadataTool
 from pmc_agent.tools.inventory import InventoryRiskTool, KnowledgeLookupTool
 
 
@@ -37,6 +39,8 @@ class AgenticAction(str, Enum):
     QUERY_INVENTORY_SNAPSHOT = "query_inventory_snapshot"
     EVALUATE_INVENTORY_RISK = "evaluate_inventory_risk"
     KNOWLEDGE_LOOKUP = "knowledge_lookup"
+    MEMORY_LOOKUP = "memory_lookup"
+    GRAPH_METADATA_LOOKUP = "graph_metadata_lookup"
     FINAL_ANSWER = "final_answer"
     ASK_USER = "ask_user"
 
@@ -114,6 +118,8 @@ class OpenAIAgenticPlannerClient:
         payload = {
             "model": selected_model,
             "input": messages,
+            "tools": _agentic_function_tools(),
+            "tool_choice": "auto",
             "text": {
                 "format": {
                     "type": "json_schema",
@@ -147,7 +153,39 @@ class OpenAIAgenticPlannerClient:
                                     "filters": _inventory_filters_schema(),
                                     "query": {
                                         "type": "string",
-                                        "description": "For knowledge_lookup only: text query used to retrieve SOP/rule/vector knowledge snippets. Use empty string when not applicable.",
+                                        "description": "For knowledge_lookup or memory_lookup: text query used to retrieve SOP/rule/vector knowledge snippets or durable memories. Use empty string when not applicable.",
+                                    },
+                                    "memory_type": {
+                                        "type": "string",
+                                        "enum": ["", "user_preference", "manual_feedback", "business_rule", "case_lesson", "tool_trace"],
+                                        "description": "For memory_lookup only: optional durable memory type filter.",
+                                    },
+                                    "subject_id": {
+                                        "type": "string",
+                                        "description": "For memory_lookup only: optional memory subject id filter such as data_catalog or pmc_agent.",
+                                    },
+                                    "query_type": {
+                                        "type": "string",
+                                        "enum": ["", "describe_table", "find_tables_by_concept", "find_fields"],
+                                        "description": "For graph_metadata_lookup only: controlled Neo4j metadata query type.",
+                                    },
+                                    "table_name": {
+                                        "type": "string",
+                                        "description": "For graph_metadata_lookup describe_table only: exact DataTable name.",
+                                    },
+                                    "concept": {
+                                        "type": "string",
+                                        "description": "For graph_metadata_lookup find_tables_by_concept only: FieldConcept such as FNSKU, MSKU, ASIN, Store, Warehouse, InventoryQuantity, Sales, Forecast, Shipment, Purchase.",
+                                    },
+                                    "keyword": {
+                                        "type": "string",
+                                        "description": "For graph_metadata_lookup find_fields only: field-name or field-comment keyword.",
+                                    },
+                                    "limit": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 200,
+                                        "description": "Result limit for graph metadata or inventory queries.",
                                     },
                                     "use_context": {
                                         "type": "boolean",
@@ -187,6 +225,13 @@ class OpenAIAgenticPlannerClient:
                                     "field_pack",
                                     "filters",
                                     "query",
+                                    "memory_type",
+                                    "subject_id",
+                                    "query_type",
+                                    "table_name",
+                                    "concept",
+                                    "keyword",
+                                    "limit",
                                     "use_context",
                                     "context_limit",
                                     "tasks",
@@ -218,13 +263,7 @@ class OpenAIAgenticPlannerClient:
         try:
             with urllib.request.urlopen(http_request, timeout=self.timeout) as response:
                 raw = json.loads(response.read().decode("utf-8"))
-            parsed = json.loads(_extract_response_text(raw))
-            decision = AgenticDecision(
-                action=AgenticAction(parsed["action"]),
-                arguments=dict(parsed.get("arguments") or {}),
-                final_text=str(parsed.get("final_text") or ""),
-                reasoning_summary=str(parsed.get("reasoning_summary") or ""),
-            )
+            decision = _parse_agentic_decision_response(raw)
         except urllib.error.HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
             error = f"HTTPError {exc.code}: {error_body[:1000]}"
@@ -280,6 +319,13 @@ def _action_arguments_schema() -> dict[str, Any]:
             "field_pack": {"type": "string", "enum": ["", *[item.value for item in FieldPack]]},
             "filters": _inventory_filters_schema(),
             "query": {"type": "string"},
+            "memory_type": {"type": "string", "enum": ["", "user_preference", "manual_feedback", "business_rule", "case_lesson", "tool_trace"]},
+            "subject_id": {"type": "string"},
+            "query_type": {"type": "string", "enum": ["", "describe_table", "find_tables_by_concept", "find_fields"]},
+            "table_name": {"type": "string"},
+            "concept": {"type": "string"},
+            "keyword": {"type": "string"},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200},
             "use_context": {"type": "boolean"},
             "context_limit": {"type": "integer", "minimum": 0, "maximum": 8},
             "self_review_passed": {"type": "boolean"},
@@ -293,6 +339,13 @@ def _action_arguments_schema() -> dict[str, Any]:
             "field_pack",
             "filters",
             "query",
+            "memory_type",
+            "subject_id",
+            "query_type",
+            "table_name",
+            "concept",
+            "keyword",
+            "limit",
             "use_context",
             "context_limit",
             "self_review_passed",
@@ -373,6 +426,171 @@ def _serial_task_schema() -> dict[str, Any]:
             "subtasks",
             "parallel",
         ],
+    }
+
+
+def _parse_agentic_decision_response(response: dict[str, Any]) -> AgenticDecision:
+    """Parse either legacy text JSON decisions or Responses function calls."""
+
+    try:
+        parsed = json.loads(_extract_response_text(response))
+    except ValueError:
+        return _agentic_decision_from_function_call(response)
+    return AgenticDecision(
+        action=AgenticAction(parsed["action"]),
+        arguments=dict(parsed.get("arguments") or {}),
+        final_text=str(parsed.get("final_text") or ""),
+        reasoning_summary=str(parsed.get("reasoning_summary") or ""),
+    )
+
+
+def _agentic_decision_from_function_call(response: dict[str, Any]) -> AgenticDecision:
+    marker_calls: list[str] = []
+    for item in response.get("output", []):
+        if not isinstance(item, dict) or item.get("type") != "function_call":
+            continue
+        name = str(item.get("name") or "").strip()
+        if name == "quota_soft_limit_marker":
+            marker_calls.append(name)
+            continue
+        try:
+            action = AgenticAction(name)
+        except ValueError as exc:
+            raise ValueError(f"Unsupported function_call returned by model: {name}") from exc
+        arguments = _parse_function_call_arguments(item.get("arguments"))
+        final_text = str(arguments.pop("final_text", "") or arguments.pop("message", "") or "")
+        reasoning_summary = str(arguments.pop("reasoning_summary", "") or "")
+        return AgenticDecision(
+            action=action,
+            arguments=arguments,
+            final_text=final_text,
+            reasoning_summary=reasoning_summary,
+        )
+    if marker_calls:
+        raise ValueError("Only quota_soft_limit_marker function_call returned; no business decision was produced.")
+    raise ValueError("No text content or supported function_call returned by model response.")
+
+
+def _parse_function_call_arguments(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if value in {None, ""}:
+        return {}
+    if isinstance(value, str):
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            return parsed
+    raise ValueError("function_call.arguments must be a JSON object.")
+
+
+def _agentic_function_tools() -> list[dict[str, Any]]:
+    return [
+        _function_tool(
+            AgenticAction.DECIDE_CONTEXT.value,
+            "Decide whether hidden recent conversation context is needed.",
+            {
+                "use_context": {"type": "boolean"},
+                "context_limit": {"type": "integer", "minimum": 0, "maximum": 8},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.INSPECT_RUN_TRACE.value,
+            "Inspect the current run path after self-review fails.",
+            {
+                "include_prompts": {"type": "boolean"},
+                "include_observations": {"type": "boolean"},
+                "review_notes": {"type": "string"},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.RUN_SERIAL_SPACE.value,
+            "Execute an ordered serial space of subtasks under main-model control.",
+            {
+                "tasks": {"type": "array", "items": _serial_task_schema()},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.QUERY_INVENTORY_SNAPSHOT.value,
+            "Read inventory snapshot from the read-only STI database.",
+            {
+                "material_code": {"type": "string"},
+                "scope": {"type": "string", "enum": ["", "single_material", "portfolio"]},
+                "field_pack": {"type": "string", "enum": ["", *[item.value for item in FieldPack]]},
+                "filters": _inventory_filters_schema(),
+                "limit": {"type": "integer", "minimum": 1, "maximum": 500},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.EVALUATE_INVENTORY_RISK.value,
+            "Evaluate inventory risk from the latest inventory snapshots.",
+            {"reasoning_summary": {"type": "string"}},
+        ),
+        _function_tool(
+            AgenticAction.KNOWLEDGE_LOOKUP.value,
+            "Search SOP, rule, and vector knowledge snippets.",
+            {
+                "query": {"type": "string"},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.MEMORY_LOOKUP.value,
+            "Retrieve durable user preferences, business rules, manual feedback, and failure lessons from long-term memory.",
+            {
+                "query": {"type": "string"},
+                "memory_type": {"type": "string", "enum": ["", "user_preference", "manual_feedback", "business_rule", "case_lesson", "tool_trace"]},
+                "subject_id": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.GRAPH_METADATA_LOOKUP.value,
+            "Query the Neo4j table/field metadata graph. Use it to find tables, describe fields, and map warehouse concepts before SQL tools.",
+            {
+                "query_type": {"type": "string", "enum": ["describe_table", "find_tables_by_concept", "find_fields"]},
+                "table_name": {"type": "string"},
+                "concept": {"type": "string"},
+                "keyword": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.FINAL_ANSWER.value,
+            "Return final answer to user only when self-review passes.",
+            {
+                "final_text": {"type": "string"},
+                "self_review_passed": {"type": "boolean"},
+                "review_notes": {"type": "string"},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
+            AgenticAction.ASK_USER.value,
+            "Ask user for missing code, scope, or confirmation.",
+            {
+                "final_text": {"type": "string"},
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+    ]
+
+
+def _function_tool(name: str, description: str, properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "function",
+        "name": name,
+        "description": description,
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": properties,
+        },
     }
 
 
@@ -472,6 +690,8 @@ class AgenticPmcLoop:
     db_connector: StiDatabaseConnector = field(default_factory=StiDatabaseConnector)
     inventory_policy: InventoryPolicy = field(default_factory=InventoryPolicy)
     knowledge_tool: KnowledgeLookupTool | None = None
+    memory_lookup_tool: MemoryLookupTool | None = None
+    graph_metadata_tool: GraphMetadataTool | None = None
     max_iterations: int = 20
     sub_behavior_client: SubBehaviorClient | None = None
     max_serial_space_tasks: int = 8
@@ -482,6 +702,10 @@ class AgenticPmcLoop:
         if self.knowledge_tool is None:
             vector_connector = MilvusVectorConnector()
             self.knowledge_tool = KnowledgeLookupTool(connector=vector_connector if vector_connector.config.ready else None)
+        if self.memory_lookup_tool is None:
+            self.memory_lookup_tool = MemoryLookupTool()
+        if self.graph_metadata_tool is None:
+            self.graph_metadata_tool = GraphMetadataTool()
         if self.sub_behavior_client is None and isinstance(self.planner, OpenAIAgenticPlannerClient):
             self.sub_behavior_client = OpenAISubBehaviorClient(
                 api_key=self.planner.api_key,
@@ -509,6 +733,8 @@ class AgenticPmcLoop:
                             "复杂目标可以选择 run_serial_space，一次提交多个受控子任务；主模型仍负责下一轮方向和最终回答。",
                             "run_serial_space 中工具子任务按顺序执行；互不依赖的 model_behavior 子任务可以放入 parallel 组并发执行。",
                             "需要查询制度、SOP、规则或知识库片段时，可以选择 knowledge_lookup；它会优先走向量库连接，查不到时返回内置知识提示。",
+                            "需要查询长期沉淀的用户偏好、人工反馈、业务规则或失败处理经验时，可以选择 memory_lookup；它不会返回实时库存数量。",
+                            "需要判断应该查哪张表、某张表有哪些字段、字段注释或字段属于哪个业务概念时，选择 graph_metadata_lookup；它只查询 Neo4j 元数据图谱，不返回实时库存数量。",
                             "最终回答前必须自审；如果自审不通过，返回 final_answer 且 arguments.self_review_passed=false，并写明 review_notes，程序会在同一个 20 轮预算内继续。",
                             "自审失败后可以选择 inspect_run_trace 查看路径、行为、关键提示词和剩余轮次，再生成新一轮尝试。",
                             "最近对话上下文默认隐藏；如果本轮问题依赖上一轮对象、代词、继续追问或省略范围，先选择 decide_context 并设置 use_context=true。",
@@ -751,6 +977,29 @@ class AgenticPmcLoop:
                     "snippets": snippets,
                     "snippet_count": len(snippets),
                 }
+
+            if decision.action == AgenticAction.MEMORY_LOOKUP:
+                self._emit_action_running(decision.action.value, "调用长期记忆", "正在检索用户偏好、业务规则和复盘经验。")
+                result = self.memory_lookup_tool.run(
+                    query=str(decision.arguments.get("query") or ""),
+                    memory_type=str(decision.arguments.get("memory_type") or ""),
+                    subject_id=str(decision.arguments.get("subject_id") or ""),
+                    limit=_bounded_int(decision.arguments.get("limit"), default=5, minimum=1, maximum=20),
+                ) if self.memory_lookup_tool else {"ok": False, "error_type": "MemoryLookupUnavailable", "error": "No memory lookup tool is configured."}
+                return {"ok": result.get("ok", True), **result}
+
+            if decision.action == AgenticAction.GRAPH_METADATA_LOOKUP:
+                self._emit_action_running(decision.action.value, "查询数据地图", "正在检索 Neo4j 表字段元数据图谱。")
+                query_type = str(decision.arguments.get("query_type") or "").strip()
+                result = self.graph_metadata_tool.run(
+                    query_type=query_type,
+                    table_name=str(decision.arguments.get("table_name") or ""),
+                    concept=str(decision.arguments.get("concept") or ""),
+                    keyword=str(decision.arguments.get("keyword") or decision.arguments.get("query") or ""),
+                    query=str(decision.arguments.get("query") or ""),
+                    limit=_bounded_int(decision.arguments.get("limit"), default=20, minimum=1, maximum=200),
+                ) if self.graph_metadata_tool else {"ok": False, "error_type": "GraphMetadataUnavailable", "error": "No graph metadata tool is configured."}
+                return {"ok": result.get("ok", True), **result}
 
             if decision.action == AgenticAction.FINAL_ANSWER:
                 self._emit_action_running(decision.action.value, "生成回复", "正在准备最终回答。")
@@ -1065,6 +1314,9 @@ def _agent_system_prompt() -> str:
         "上下文记忆也是一个可选动作，不是默认输入；需要时你必须先选择 decide_context。"
         "拿到 observation 后，你要判断是否足以回答；不够就继续选择下一步，足够才 final_answer。"
         "不要编造库存、销量、在途、采购数据。"
+        "需要复用长期偏好、业务规则或失败处理经验时，选择 memory_lookup；"
+        "需要查表结构、字段含义、字段概念或表池用途时，选择 graph_metadata_lookup；"
+        "它只回答数据地图问题，不回答实时库存数量。"
     )
 
 
@@ -1087,7 +1339,7 @@ def _available_tools() -> list[dict[str, Any]]:
                 "tasks": [
                     {
                         "kind": "tool",
-                        "action": "decide_context | query_inventory_snapshot | evaluate_inventory_risk | knowledge_lookup",
+                        "action": "decide_context | query_inventory_snapshot | evaluate_inventory_risk | knowledge_lookup | memory_lookup | graph_metadata_lookup",
                         "arguments": "same arguments as the selected tool action",
                     },
                     {
@@ -1123,6 +1375,22 @@ def _available_tools() -> list[dict[str, Any]]:
             "name": AgenticAction.KNOWLEDGE_LOOKUP.value,
             "description": "Search SOP, rule, and vector knowledge snippets. Prefer this when the user asks about process rules, table meanings, verification logic, or operational guidance.",
             "arguments": {"query": "required text query"},
+        },
+        {
+            "name": AgenticAction.MEMORY_LOOKUP.value,
+            "description": "Retrieve durable project memories such as user preferences, manual feedback, business rules, and failure lessons. Prefer this before answering follow-up questions that may depend on prior learned preferences or rules.",
+            "arguments": {"query": "text query", "memory_type": "optional type filter", "subject_id": "optional subject filter", "limit": "1-20"},
+        },
+        {
+            "name": AgenticAction.GRAPH_METADATA_LOOKUP.value,
+            "description": "Query Neo4j table/field metadata graph. Use this to describe a table, find fields by keyword, or find tables containing a business concept before choosing SQL tables.",
+            "arguments": {
+                "query_type": "describe_table | find_tables_by_concept | find_fields",
+                "table_name": "required for describe_table, exact table name",
+                "concept": "required for find_tables_by_concept, e.g. FNSKU/MSKU/ASIN/Store/Warehouse/InventoryQuantity/Sales/Forecast/Shipment/Purchase",
+                "keyword": "required for find_fields, field name or Chinese field comment keyword",
+                "limit": "1-200",
+            },
         },
         {"name": AgenticAction.ASK_USER.value, "description": "Ask user for missing code, scope, or confirmation.", "arguments": {}},
         {
