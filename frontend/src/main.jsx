@@ -1553,6 +1553,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     label: formatChartDateRange(point.week_start_date, point.week_end_date) || point.week,
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
+    adSpend: Number(point.ad_spend || 0),
   }));
   if (!data.length) return null;
 
@@ -1563,7 +1564,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const maxTotal = Math.max(...totals.map((item) => item.value), 1);
   const width = 680;
   const height = 250;
-  const margin = { top: 22, right: 22, bottom: 46, left: 54 };
+  const margin = { top: 22, right: 58, bottom: 46, left: 54 };
   const xScale = d3
     .scalePoint()
     .domain(data.map((point) => point.week))
@@ -1575,14 +1576,27 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     .domain([0, maxValue * 1.15])
     .nice()
     .range([height - margin.bottom, margin.top]);
+  const maxAdSpend = d3.max(data, (point) => point.adSpend) || 1;
+  const adScale = d3
+    .scaleLinear()
+    .domain([0, maxAdSpend * 1.15])
+    .nice()
+    .range([height - margin.bottom, margin.top]);
   const line = d3
     .line()
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => yScale(point.value))
     .curve(d3.curveMonotoneX);
+  const adLine = d3
+    .line()
+    .x((point) => xScale(point.week) || margin.left)
+    .y((point) => adScale(point.value))
+    .curve(d3.curveMonotoneX);
   const forecastLine = line(data.map((point) => ({ week: point.week, value: point.forecast })));
   const actualLine = line(data.map((point) => ({ week: point.week, value: point.actual })));
+  const adSpendLine = adLine(data.map((point) => ({ week: point.week, value: point.adSpend })));
   const yTicks = yScale.ticks(4);
+  const adTicks = adScale.ticks(4);
   const labelEvery = Math.max(1, Math.ceil(data.length / 6));
 
   return (
@@ -1590,6 +1604,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
       <div className="forecast-chart-legend">
         <span className="forecast">预测</span>
         <span className="actual">实际</span>
+        <span className="ad-spend">广告花费</span>
       </div>
       <div className="forecast-total-bars" aria-label="预测总量和实际总量">
         {totals.map((item) => (
@@ -1605,19 +1620,26 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {yTicks.map((tick) => (
-          <g key={tick}>
+          <g key={`sales-${tick}`}>
             <line x1={margin.left} x2={width - margin.right} y1={yScale(tick)} y2={yScale(tick)} />
             <text x={margin.left - 10} y={yScale(tick) + 4} textAnchor="end">
               {formatNumber(tick)}
             </text>
           </g>
         ))}
+        {adTicks.map((tick) => (
+          <text key={`ad-${tick}`} className="ad-axis-label" x={width - margin.right + 10} y={adScale(tick) + 4}>
+            {formatNumber(tick)}
+          </text>
+        ))}
         <path className="forecast-line" d={forecastLine || ""} />
         <path className="actual-line" d={actualLine || ""} />
+        <path className="ad-spend-line" d={adSpendLine || ""} />
         {data.map((point) => (
           <React.Fragment key={point.week}>
             <circle className="forecast-dot" cx={xScale(point.week)} cy={yScale(point.forecast)} r="4" />
             <circle className="actual-dot" cx={xScale(point.week)} cy={yScale(point.actual)} r="4" />
+            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={adScale(point.adSpend)} r="4" />
           </React.Fragment>
         ))}
         {data.map((point, index) =>
