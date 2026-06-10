@@ -1715,8 +1715,8 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
 
 function ForecastAdSignalStrip({ data }) {
   const width = 680;
-  const height = 150;
-  const margin = { top: 18, right: 56, bottom: 30, left: 54 };
+  const height = 168;
+  const margin = { top: 18, right: 28, bottom: 48, left: 54 };
   const xScale = d3
     .scalePoint()
     .domain(data.map((point) => point.week))
@@ -1782,8 +1782,9 @@ function ForecastAdSignalStrip({ data }) {
         ))}
         {data.map((point, index) =>
           index % labelEvery === 0 || index === data.length - 1 ? (
-            <text key={`ad-label-${point.week}`} className="ad-x-label" x={xScale(point.week)} y={height - 10} textAnchor="middle">
-              {point.labelStart || point.week}
+            <text key={`ad-label-${point.week}`} className="ad-x-label" x={xScale(point.week)} y={height - 28} textAnchor="middle">
+              <tspan x={xScale(point.week)}>{point.labelStart || point.label}</tspan>
+              {point.labelEnd && <tspan x={xScale(point.week)} dy="13">至 {point.labelEnd}</tspan>}
             </text>
           ) : null
         )}
