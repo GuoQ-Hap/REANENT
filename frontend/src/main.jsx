@@ -1167,6 +1167,7 @@ function ActionDetailDialog({ item, onClose }) {
         ["material_code", item.material_code],
         ["msku", item.msku],
         ["fnsku", item.fnsku],
+        ["asin", item.asin],
         ["store_name", item.store_name],
         ["country_code", item.country_code],
       ].forEach(([key, value]) => {
@@ -1739,13 +1740,13 @@ function ForecastAdSignalStrip({ data }) {
     .line()
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => spendScale(point.adSpend))
-    .curve(d3.curveLinear)(data);
+    .curve(d3.curveMonotoneX)(data);
   const acosLine = d3
     .line()
     .defined((point) => point.adAcos !== null)
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => acosScale(point.adAcos || 0))
-    .curve(d3.curveLinear)(data);
+    .curve(d3.curveMonotoneX)(data);
   const spendTicks = spendScale.ticks(3);
   const acosTicks = acosScale.ticks(3);
   const labelEvery = Math.max(1, Math.ceil(data.length / 4));

@@ -306,6 +306,7 @@ def get_monthly_forecast_review(
     material_code: str | None = None,
     msku: str | None = None,
     fnsku: str | None = None,
+    asin: str | None = None,
     store_name: str | None = None,
     country_code: str | None = None,
     as_of_date: str | date | None = None,
@@ -318,9 +319,9 @@ def get_monthly_forecast_review(
     target_start, target_end = _target_month_window(as_of_date=as_of_date, month_offset=month_offset)
     trigger_date = _as_date(as_of_date) or date.today()
     review_end = _week_start(trigger_date) - timedelta(days=1)
-    codes = _unique_text([_text(material_code), _text(msku), _text(fnsku)])
+    codes = _unique_text([_text(material_code), _text(msku), _text(fnsku), _text(asin)])
     if not codes:
-        raise ValueError("material_code、msku、fnsku 至少需要一个。")
+        raise ValueError("material_code、msku、fnsku、asin 至少需要一个。")
     try:
         snapshot_rows = connector.get_monthly_forecast_snapshot_rows(
             material_codes=codes,
@@ -1017,6 +1018,7 @@ def _matching_sales_rows(rows: list[dict[str, Any]], codes: list[str]) -> list[d
             _norm(row.get("sku")),
             _norm(row.get("seller_sku")),
             _norm(row.get("fnsku")),
+            _norm(row.get("asin")),
         }
         if code_set.intersection(row_codes):
             matched.append(row)
@@ -1030,6 +1032,10 @@ def _weekly_estimates(
     review_end: date,
 ) -> list[MonthlyForecastReviewWeeklyEstimate]:
     grouped: dict[str, dict[str, Any]] = {}
+    week_cursor = _week_start(review_start)
+    while week_cursor <= review_end:
+        _weekly_bucket(grouped, week_cursor, review_start, review_end)
+        week_cursor += timedelta(days=7)
 
     for row in estimate_rows:
         row_date = _as_date(row.get("date"))

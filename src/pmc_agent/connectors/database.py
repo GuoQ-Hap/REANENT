@@ -323,9 +323,10 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(sku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(price_list_seller_sku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(asin, '')) IN ({placeholders})
               )
             """
-            code_params = [*codes, *codes, *codes]
+            code_params = [*codes, *codes, *codes, *codes]
         sql = f"""
             SELECT
                 date,
@@ -334,6 +335,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 COALESCE(store_name, '') AS store_name,
                 UPPER(COALESCE(country_code, '')) AS country_code,
                 UPPER(COALESCE(fnsku, '')) AS fnsku,
+                UPPER(COALESCE(asin, '')) AS asin,
                 SUM(COALESCE(volume, 0)) AS daily_sales_volume,
                 SUM(COALESCE(spend, 0)) AS ad_spend,
                 SUM(COALESCE(real_ad_cost, 0)) AS real_ad_cost,
@@ -356,7 +358,8 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(price_list_seller_sku, '')),
                 COALESCE(store_name, ''),
                 UPPER(COALESCE(country_code, '')),
-                UPPER(COALESCE(fnsku, ''))
+                UPPER(COALESCE(fnsku, '')),
+                UPPER(COALESCE(asin, ''))
         """
         country = (country_code or "").strip().upper()
         store = (store_name or "").strip()
@@ -394,6 +397,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(sku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(msku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(asin, '')) IN ({placeholders})
             )""",
             "(%s = '' OR COALESCE(store_name, '') = %s)",
             "(%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))",
@@ -401,6 +405,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
         params: list[Any] = [
             target_start_date,
             target_end_date,
+            *codes,
             *codes,
             *codes,
             *codes,
@@ -428,14 +433,14 @@ class StiDatabaseConnector(ConnectorLogMixin):
               AND date = (
                 SELECT MAX(date)
                 FROM {table_name}
-                WHERE date BETWEEN %s AND %s
+                WHERE {where_sql}
               )
             ORDER BY COALESCE(future_30d_sales, 0) DESC
             LIMIT {_bounded_limit(limit)}
         """
         with self._connect() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(sql, [*params, target_start_date, target_end_date])
+                cursor.execute(sql, [*params, *params])
                 return list(cursor.fetchall())
 
     def get_monthly_sales_estimate_rows(
@@ -482,6 +487,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(sku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(msku, '')) IN ({placeholders})
                 OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(asin, '')) IN ({placeholders})
               )
               AND (%s = '' OR COALESCE(store_name, '') = %s)
               AND (%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))
@@ -494,6 +500,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
             target_month,
             target_start_date,
             target_end_date,
+            *codes,
             *codes,
             *codes,
             *codes,
