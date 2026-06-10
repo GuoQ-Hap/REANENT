@@ -1627,6 +1627,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     actual: Number(point.actual_sales || 0),
     organic: Number(point.organic_sales || 0),
     adSpend: Number(point.ad_spend || 0),
+    adSales: Number(point.ad_sales_amount || 0),
     adAcos: point.ad_acos === null || point.ad_acos === undefined ? null : Number(point.ad_acos),
   }));
   if (!data.length) return null;
@@ -1738,13 +1739,13 @@ function ForecastAdSignalStrip({ data }) {
     .line()
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => spendScale(point.adSpend))
-    .curve(d3.curveMonotoneX)(data);
+    .curve(d3.curveLinear)(data);
   const acosLine = d3
     .line()
     .defined((point) => point.adAcos !== null)
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => acosScale(point.adAcos || 0))
-    .curve(d3.curveMonotoneX)(data);
+    .curve(d3.curveLinear)(data);
   const spendTicks = spendScale.ticks(3);
   const acosTicks = acosScale.ticks(3);
   const labelEvery = Math.max(1, Math.ceil(data.length / 4));
@@ -1776,8 +1777,14 @@ function ForecastAdSignalStrip({ data }) {
         <path className="ad-acos-line" d={acosLine || ""} />
         {data.map((point) => (
           <React.Fragment key={`ad-point-${point.week}`}>
-            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={spendScale(point.adSpend)} r="3.5" />
-            {point.adAcos !== null && <circle className="ad-acos-dot" cx={xScale(point.week)} cy={acosScale(point.adAcos)} r="3.5" />}
+            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={spendScale(point.adSpend)} r="3.5">
+              <title>{`${point.label} · 广告花费 ${formatMoney(point.adSpend)} · 广告销售额 ${formatMoney(point.adSales)}`}</title>
+            </circle>
+            {point.adAcos !== null && (
+              <circle className="ad-acos-dot" cx={xScale(point.week)} cy={acosScale(point.adAcos)} r="3.5">
+                <title>{`${point.label} · ACOS ${formatRatioPercent(point.adAcos)} · 广告花费 ${formatMoney(point.adSpend)} / 广告销售额 ${formatMoney(point.adSales)}`}</title>
+              </circle>
+            )}
           </React.Fragment>
         ))}
         {data.map((point, index) =>
