@@ -312,6 +312,8 @@ def _actual_sales_row(
     sales_date: str,
     volume: float,
 ) -> dict[str, Any]:
+    ad_spend = volume * 2
+    ad_sales_amount = volume * 10
     return {
         "date": sales_date,
         "sku": sku,
@@ -320,6 +322,15 @@ def _actual_sales_row(
         "store_name": store_name,
         "country_code": country_code,
         "daily_sales_volume": volume,
+        "ad_spend": ad_spend,
+        "ad_sales_amount": ad_sales_amount,
+        "ad_order_quantity": volume / 10,
+        "ad_clicks": volume * 3,
+        "ad_impressions": volume * 30,
+        "ads_sp_cost": ad_spend,
+        "ads_sd_cost": 0,
+        "shared_ads_sb_cost": 0,
+        "shared_ads_sbv_cost": 0,
     }
 
 

@@ -128,6 +128,10 @@ class MonthlyForecastReviewWeeklyEstimate:
     week_end_date: str
     forecast_quantity: float
     actual_sales: float
+    ad_spend: float
+    ad_sales_amount: float
+    ad_order_quantity: float
+    ad_acos: float | None
     difference: float
     variance_ratio: float | None
     variance_percent: float | None
@@ -153,6 +157,10 @@ class MonthlyForecastReview:
     actual_field: str
     forecast_quantity: float
     actual_sales: float
+    ad_spend: float
+    ad_sales_amount: float
+    ad_order_quantity: float
+    ad_acos: float | None
     difference: float
     variance_ratio: float | None
     variance_percent: float | None
@@ -352,6 +360,10 @@ def get_monthly_forecast_review(
     forecast_quantity = sum(_number(row.get("daily_sales_quantity")) for row in estimate_rows)
     matched_actual_rows = _matching_sales_rows(actual_rows, codes)
     actual_sales = sum(_number(row.get("daily_sales_volume")) for row in matched_actual_rows)
+    ad_spend = sum(_number(row.get("ad_spend")) for row in matched_actual_rows)
+    ad_sales_amount = sum(_number(row.get("ad_sales_amount")) for row in matched_actual_rows)
+    ad_order_quantity = sum(_number(row.get("ad_order_quantity")) for row in matched_actual_rows)
+    ad_acos = ad_spend / ad_sales_amount if ad_sales_amount else None
     difference = actual_sales - forecast_quantity
     variance_ratio = difference / forecast_quantity if forecast_quantity else None
     result_type, result_label = _forecast_review_result(difference, forecast_quantity, actual_sales)
@@ -374,6 +386,10 @@ def get_monthly_forecast_review(
         actual_field="volume",
         forecast_quantity=round(forecast_quantity, 2),
         actual_sales=round(actual_sales, 2),
+        ad_spend=round(ad_spend, 2),
+        ad_sales_amount=round(ad_sales_amount, 2),
+        ad_order_quantity=round(ad_order_quantity, 2),
+        ad_acos=round(ad_acos, 4) if ad_acos is not None else None,
         difference=round(difference, 2),
         variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,
         variance_percent=round(variance_ratio * 100, 2) if variance_ratio is not None else None,
@@ -387,7 +403,8 @@ def get_monthly_forecast_review(
             "趋势对比区间从预测版本月最后一张备份取值日期的下一周开始，截止到触发日所在周的上一周。",
             f"{MONTHLY_FORECAST_REVIEW_TABLE} 先取目标月份内全表最大 date，作为该月最后一次库存监控底表备份快照。",
             f"预测口径使用 {MONTHLY_SALES_ESTIMATE_TABLE}.daily_sales_quantity，取 month=预测版本月 且 date 落在趋势对比区间内的预估，并按周聚合。",
-            f"实际销量使用 {DAILY_SALES_TABLE}.volume，按趋势对比区间和周聚合。",
+            f"实际销量和广告指标使用 {DAILY_SALES_TABLE}，按趋势对比区间和周聚合。",
+            "ACOS = 广告花费 / 广告销售额。",
             "差值 = 实际销量 - 预测销量；比例 = 差值 / 预测销量。",
         ],
         snapshot_rows=[
@@ -1022,11 +1039,18 @@ def _weekly_estimates(
             continue
         bucket = _weekly_bucket(grouped, row_date, review_start, review_end)
         bucket["actual_sales"] += _number(row.get("daily_sales_volume"))
+        bucket["ad_spend"] += _number(row.get("ad_spend"))
+        bucket["ad_sales_amount"] += _number(row.get("ad_sales_amount"))
+        bucket["ad_order_quantity"] += _number(row.get("ad_order_quantity"))
 
     estimates: list[MonthlyForecastReviewWeeklyEstimate] = []
     for values in sorted(grouped.values(), key=lambda item: item["week_start"]):
         forecast_quantity = values["forecast_quantity"]
         actual_sales = values["actual_sales"]
+        ad_spend = values["ad_spend"]
+        ad_sales_amount = values["ad_sales_amount"]
+        ad_order_quantity = values["ad_order_quantity"]
+        ad_acos = ad_spend / ad_sales_amount if ad_sales_amount else None
         difference = actual_sales - forecast_quantity
         variance_ratio = difference / forecast_quantity if forecast_quantity else None
         estimates.append(
@@ -1036,6 +1060,10 @@ def _weekly_estimates(
                 week_end_date=values["display_end"].isoformat(),
                 forecast_quantity=round(forecast_quantity, 2),
                 actual_sales=round(actual_sales, 2),
+                ad_spend=round(ad_spend, 2),
+                ad_sales_amount=round(ad_sales_amount, 2),
+                ad_order_quantity=round(ad_order_quantity, 2),
+                ad_acos=round(ad_acos, 4) if ad_acos is not None else None,
                 difference=round(difference, 2),
                 variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,
                 variance_percent=round(variance_ratio * 100, 2) if variance_ratio is not None else None,
@@ -1064,6 +1092,9 @@ def _weekly_bucket(
             "display_end": min(week_end, review_end),
             "forecast_quantity": 0.0,
             "actual_sales": 0.0,
+            "ad_spend": 0.0,
+            "ad_sales_amount": 0.0,
+            "ad_order_quantity": 0.0,
         },
     )
 

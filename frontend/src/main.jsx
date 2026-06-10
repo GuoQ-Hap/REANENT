@@ -1379,6 +1379,10 @@ function SkuDetailPanel({
                     ["快照日期", forecastReview.snapshot_date],
                     ["总预测", formatNumber(forecastReview.forecast_quantity)],
                     ["总销量", formatNumber(forecastReview.actual_sales)],
+                    ["广告花费", formatMoney(forecastReview.ad_spend)],
+                    ["广告销售额", formatMoney(forecastReview.ad_sales_amount)],
+                    ["广告订单量", formatNumber(forecastReview.ad_order_quantity)],
+                    ["ACOS", formatRatioPercent(forecastReview.ad_acos)],
                     ["总差值", formatSignedNumber(forecastReview.difference)],
                     ["差值比例", formatPercent(forecastReview.variance_percent)],
                     ["快照行数", formatNumber(forecastReview.snapshot_row_count)],
@@ -1399,6 +1403,7 @@ function SkuDetailPanel({
                           <span>{week.week}</span>
                           <strong>{formatNumber(week.actual_sales)} / {formatNumber(week.forecast_quantity)}</strong>
                           <small>{week.week_start_date} 至 {week.week_end_date} · {formatSignedNumber(week.difference)} · {formatPercent(week.variance_percent)}</small>
+                          <small>广告 {formatMoney(week.ad_spend)} · ACOS {formatRatioPercent(week.ad_acos)}</small>
                         </div>
                       ))}
                     </div>
@@ -1721,6 +1726,16 @@ function formatPercent(value) {
   const number = Number(value);
   const sign = number > 0 ? "+" : "";
   return `${sign}${number.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`;
+}
+
+function formatRatioPercent(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return `${(Number(value) * 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`;
+}
+
+function formatMoney(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
 }
 
 function lastItem(values) {

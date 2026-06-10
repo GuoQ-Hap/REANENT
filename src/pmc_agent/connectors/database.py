@@ -334,7 +334,17 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 COALESCE(store_name, '') AS store_name,
                 UPPER(COALESCE(country_code, '')) AS country_code,
                 UPPER(COALESCE(fnsku, '')) AS fnsku,
-                SUM(COALESCE(volume, 0)) AS daily_sales_volume
+                SUM(COALESCE(volume, 0)) AS daily_sales_volume,
+                SUM(COALESCE(spend, 0)) AS ad_spend,
+                SUM(COALESCE(real_ad_cost, 0)) AS real_ad_cost,
+                SUM(COALESCE(ad_sales_amount, 0)) AS ad_sales_amount,
+                SUM(COALESCE(ad_order_quantity, 0)) AS ad_order_quantity,
+                SUM(COALESCE(clicks, 0)) AS ad_clicks,
+                SUM(COALESCE(impressions, 0)) AS ad_impressions,
+                SUM(COALESCE(ads_sp_cost, 0)) AS ads_sp_cost,
+                SUM(COALESCE(ads_sd_cost, 0)) AS ads_sd_cost,
+                SUM(COALESCE(shared_ads_sb_cost, 0)) AS shared_ads_sb_cost,
+                SUM(COALESCE(shared_ads_sbv_cost, 0)) AS shared_ads_sbv_cost
             FROM ads_lingxing_sc_sales_daily_new
             WHERE date BETWEEN %s AND %s
               {code_filter}
