@@ -1112,6 +1112,9 @@ function ActionDetailDialog({ item, onClose }) {
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
+  const [forecastReview, setForecastReview] = useState(null);
+  const [forecastReviewLoading, setForecastReviewLoading] = useState(false);
+  const [forecastReviewError, setForecastReviewError] = useState("");
   const [recordInput, setRecordInput] = useState("");
   const [records, setRecords] = useState([]);
   const shortageSummary = piciShortageWindowSummary(item);
@@ -1127,6 +1130,9 @@ function ActionDetailDialog({ item, onClose }) {
       },
     ]);
     setChatInput("");
+    setForecastReview(null);
+    setForecastReviewError("");
+    setForecastReviewLoading(false);
     setRecordInput("");
     setRecords([
       { time: "当前", title: "Agent 识别风险", content: item.warning_type || "正常" },
@@ -1147,6 +1153,32 @@ function ActionDetailDialog({ item, onClose }) {
       setChatMessages((messages) => [...messages, { role: "assistant", text: localSkuChatReply(item, text) }]);
     } finally {
       setChatSending(false);
+    }
+  };
+
+  const runMonthlyForecastReview = async () => {
+    if (forecastReviewLoading) return;
+    setForecastReviewLoading(true);
+    setForecastReviewError("");
+    try {
+      const params = new URLSearchParams();
+      params.set("month_offset", "2");
+      [
+        ["material_code", item.material_code],
+        ["msku", item.msku],
+        ["fnsku", item.fnsku],
+        ["store_name", item.store_name],
+        ["country_code", item.country_code],
+      ].forEach(([key, value]) => {
+        if (value) params.set(key, value);
+      });
+      const response = await fetch(`${API_BASE_URL}/control-tower/monthly-forecast-review?${params.toString()}`);
+      if (!response.ok) throw new Error(`复盘失败 ${response.status}`);
+      setForecastReview(await response.json());
+    } catch (error) {
+      setForecastReviewError(error instanceof Error ? error.message : "月度预测复盘失败");
+    } finally {
+      setForecastReviewLoading(false);
     }
   };
 
@@ -1183,7 +1215,16 @@ function ActionDetailDialog({ item, onClose }) {
         </div>
         <div className="drawer-body">
           {activeTab === "detail" && (
-            <SkuDetailPanel item={item} shortageSummary={shortageSummary} riskFlags={riskFlags} piciEntries={piciEntries} />
+            <SkuDetailPanel
+              item={item}
+              shortageSummary={shortageSummary}
+              riskFlags={riskFlags}
+              piciEntries={piciEntries}
+              forecastReview={forecastReview}
+              forecastReviewLoading={forecastReviewLoading}
+              forecastReviewError={forecastReviewError}
+              onForecastReview={runMonthlyForecastReview}
+            />
           )}
           {activeTab === "ai" && (
             <SkuAiChatPanel
@@ -1207,7 +1248,16 @@ function ActionDetailDialog({ item, onClose }) {
   );
 }
 
-function SkuDetailPanel({ item, shortageSummary, riskFlags, piciEntries }) {
+function SkuDetailPanel({
+  item,
+  shortageSummary,
+  riskFlags,
+  piciEntries,
+  forecastReview,
+  forecastReviewLoading,
+  forecastReviewError,
+  onForecastReview,
+}) {
   return (
     <>
           <div className="detail-kpis">
@@ -1298,6 +1348,63 @@ function SkuDetailPanel({ item, shortageSummary, riskFlags, piciEntries }) {
                 ["预计7天库存", formatNumber(item.projected_7d)],
               ]}
             />
+          </DetailSection>
+
+          <DetailSection title="月度预测复盘">
+            <div className="forecast-review-head">
+              <div>
+                <strong>
+                  {forecastReview
+                    ? `${forecastReview.target_month} 版本预测 vs ${forecastReview.comparison_month} 周度实际`
+                    : "按当前月份 -2 取预测版本月"}
+                </strong>
+                <span>来源 {forecastReview?.forecast_source || "dim_lingxing_sales_estimates_monthly_v1"}</span>
+              </div>
+              <button type="button" onClick={onForecastReview} disabled={forecastReviewLoading}>
+                <RefreshCw size={15} />
+                <span>{forecastReviewLoading ? "复盘中" : "手动复盘"}</span>
+              </button>
+            </div>
+            {forecastReviewError && <p className="forecast-review-error">{forecastReviewError}</p>}
+            {forecastReview ? (
+              <div className={`forecast-review-card ${forecastReview.result_type || ""}`}>
+                <div className="forecast-review-result">
+                  <span>{forecastReview.result_label || "-"}</span>
+                  <strong>{formatPercent(forecastReview.variance_percent)}</strong>
+                </div>
+                <DetailGrid
+                  rows={[
+                    ["预测版本月", `${forecastReview.target_start_date} 至 ${forecastReview.target_end_date}`],
+                    ["对比区间", `${forecastReview.review_start_date || forecastReview.comparison_start_date} 至 ${forecastReview.review_end_date || forecastReview.comparison_end_date}`],
+                    ["快照日期", forecastReview.snapshot_date],
+                    ["总预测", formatNumber(forecastReview.forecast_quantity)],
+                    ["总销量", formatNumber(forecastReview.actual_sales)],
+                    ["总差值", formatSignedNumber(forecastReview.difference)],
+                    ["差值比例", formatPercent(forecastReview.variance_percent)],
+                    ["快照行数", formatNumber(forecastReview.snapshot_row_count)],
+                    ["预估行数", formatNumber(forecastReview.forecast_row_count)],
+                    ["实际行数", formatNumber(forecastReview.actual_row_count)],
+                  ]}
+                />
+                {forecastReview.weekly_estimates?.length > 0 && (
+                  <>
+                    <ForecastReviewChart points={forecastReview.weekly_estimates} />
+                    <div className="weekly-estimate-list">
+                      {forecastReview.weekly_estimates.map((week) => (
+                        <div key={week.week}>
+                          <span>{week.week}</span>
+                          <strong>{formatNumber(week.actual_sales)} / {formatNumber(week.forecast_quantity)}</strong>
+                          <small>{week.week_start_date} 至 {week.week_end_date} · {formatSignedNumber(week.difference)} · {formatPercent(week.variance_percent)}</small>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <p>{lastItem(forecastReview.notes) || "差值 = 实际销量 - 预测销量；比例 = 差值 / 预测销量。"}</p>
+              </div>
+            ) : (
+              <p className="empty-detail">点击手动复盘后，系统会用当前月份 -2 的预测版本月，从该月月初到今天按周对比预测销量和实际销量。</p>
+            )}
           </DetailSection>
 
           <DetailSection title="冗余依据">
@@ -1431,6 +1538,73 @@ function HandlingRecordsPanel({ records, input, onInputChange, onAdd }) {
   );
 }
 
+function ForecastReviewChart({ points }) {
+  const data = (points || []).map((point) => ({
+    week: point.week,
+    forecast: Number(point.forecast_quantity || 0),
+    actual: Number(point.actual_sales || 0),
+  }));
+  if (!data.length) return null;
+
+  const width = 680;
+  const height = 250;
+  const margin = { top: 22, right: 22, bottom: 46, left: 54 };
+  const xScale = d3
+    .scalePoint()
+    .domain(data.map((point) => point.week))
+    .range([margin.left, width - margin.right])
+    .padding(0.5);
+  const maxValue = d3.max(data, (point) => Math.max(point.forecast, point.actual)) || 1;
+  const yScale = d3
+    .scaleLinear()
+    .domain([0, maxValue * 1.15])
+    .nice()
+    .range([height - margin.bottom, margin.top]);
+  const line = d3
+    .line()
+    .x((point) => xScale(point.week) || margin.left)
+    .y((point) => yScale(point.value))
+    .curve(d3.curveMonotoneX);
+  const forecastLine = line(data.map((point) => ({ week: point.week, value: point.forecast })));
+  const actualLine = line(data.map((point) => ({ week: point.week, value: point.actual })));
+  const yTicks = yScale.ticks(4);
+  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+
+  return (
+    <div className="forecast-chart" aria-label="周度预测和实际销量折线图">
+      <div className="forecast-chart-legend">
+        <span className="forecast">预测</span>
+        <span className="actual">实际</span>
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        {yTicks.map((tick) => (
+          <g key={tick}>
+            <line x1={margin.left} x2={width - margin.right} y1={yScale(tick)} y2={yScale(tick)} />
+            <text x={margin.left - 10} y={yScale(tick) + 4} textAnchor="end">
+              {formatNumber(tick)}
+            </text>
+          </g>
+        ))}
+        <path className="forecast-line" d={forecastLine || ""} />
+        <path className="actual-line" d={actualLine || ""} />
+        {data.map((point) => (
+          <React.Fragment key={point.week}>
+            <circle className="forecast-dot" cx={xScale(point.week)} cy={yScale(point.forecast)} r="4" />
+            <circle className="actual-dot" cx={xScale(point.week)} cy={yScale(point.actual)} r="4" />
+          </React.Fragment>
+        ))}
+        {data.map((point, index) =>
+          index % labelEvery === 0 || index === data.length - 1 ? (
+            <text key={point.week} className="x-label" x={xScale(point.week)} y={height - 18} textAnchor="middle">
+              {point.week}
+            </text>
+          ) : null
+        )}
+      </svg>
+    </div>
+  );
+}
+
 function DetailSection({ title, children }) {
   return (
     <section className="detail-section">
@@ -1498,6 +1672,24 @@ function FieldDecisionTable({ fields }) {
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
+function formatSignedNumber(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${formatNumber(number)}`;
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${number.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}%`;
+}
+
+function lastItem(values) {
+  return Array.isArray(values) && values.length > 0 ? values[values.length - 1] : "";
 }
 
 function formatDays(value) {

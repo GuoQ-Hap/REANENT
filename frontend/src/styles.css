@@ -1958,6 +1958,235 @@ tbody tr:hover {
   font-weight: 800;
 }
 
+.forecast-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.forecast-review-head strong,
+.forecast-review-head span {
+  display: block;
+}
+
+.forecast-review-head strong {
+  color: #f1ffff;
+  font-size: 14px;
+}
+
+.forecast-review-head span {
+  margin-top: 4px;
+  color: #84bbc6;
+  font-size: 12px;
+}
+
+.forecast-review-head button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  color: #041219;
+  background: var(--cyan);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.forecast-review-head button:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.forecast-review-error {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  color: #ffb4ba;
+  background: rgba(255, 91, 100, 0.1);
+  border-left: 3px solid var(--danger);
+  line-height: 1.45;
+}
+
+.forecast-review-card {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  background: rgba(35, 232, 255, 0.055);
+  border: 1px solid rgba(35, 232, 255, 0.16);
+  border-left: 4px solid var(--cyan);
+}
+
+.forecast-review-card.over_sold {
+  border-left-color: #ff8c4a;
+}
+
+.forecast-review-card.under_sold {
+  border-left-color: var(--gold);
+}
+
+.forecast-review-card.matched {
+  border-left-color: #64e7ff;
+}
+
+.forecast-review-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 10px;
+  background: rgba(1, 18, 25, 0.56);
+  border: 1px solid rgba(35, 232, 255, 0.12);
+}
+
+.forecast-review-result span {
+  color: #041219;
+  background: var(--gold);
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.forecast-review-result strong {
+  color: #f1ffff;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 20px;
+}
+
+.forecast-review-card p {
+  margin: 0;
+  color: #8abfc8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.forecast-chart {
+  min-width: 0;
+  padding: 8px;
+  overflow: hidden;
+  background: rgba(1, 18, 25, 0.5);
+  border: 1px solid rgba(35, 232, 255, 0.12);
+}
+
+.forecast-chart-legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-bottom: 2px;
+  color: #afdae2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.forecast-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.forecast-chart-legend span::before {
+  content: "";
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+}
+
+.forecast-chart-legend .forecast::before {
+  background: #ffd36e;
+}
+
+.forecast-chart-legend .actual::before {
+  background: #64e7ff;
+}
+
+.forecast-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.forecast-chart line {
+  stroke: rgba(143, 205, 216, 0.13);
+  stroke-width: 1;
+}
+
+.forecast-chart text {
+  fill: #7fadba;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 11px;
+}
+
+.forecast-chart .x-label {
+  fill: #9ed0d9;
+  font-size: 10px;
+}
+
+.forecast-chart path {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.forecast-chart .forecast-line {
+  stroke: #ffd36e;
+}
+
+.forecast-chart .actual-line {
+  stroke: #64e7ff;
+}
+
+.forecast-chart .forecast-dot {
+  fill: #ffd36e;
+  stroke: #041219;
+  stroke-width: 1.5;
+}
+
+.forecast-chart .actual-dot {
+  fill: #64e7ff;
+  stroke: #041219;
+  stroke-width: 1.5;
+}
+
+.weekly-estimate-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekly-estimate-list div {
+  min-width: 0;
+  padding: 7px 8px;
+  background: rgba(2, 26, 36, 0.7);
+  border: 1px solid rgba(35, 232, 255, 0.12);
+}
+
+.weekly-estimate-list span,
+.weekly-estimate-list strong,
+.weekly-estimate-list small {
+  display: block;
+}
+
+.weekly-estimate-list span,
+.weekly-estimate-list small {
+  color: #84bbc6;
+  font-size: 12px;
+}
+
+.weekly-estimate-list strong {
+  margin-top: 4px;
+  color: #eaffff;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 14px;
+}
+
+.weekly-estimate-list small {
+  margin-top: 3px;
+}
+
 .pici-list {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -2203,6 +2432,7 @@ tbody tr:hover {
 
   .detail-kpis,
   .detail-grid,
+  .weekly-estimate-list,
   .pici-list {
     grid-template-columns: 1fr;
   }

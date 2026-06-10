@@ -13,6 +13,8 @@ from pmc_agent.schema_catalog import ALL_WAREHOUSE_CATALOG, FieldPack
 SOURCE_TABLE = ALL_WAREHOUSE_CATALOG.table_name
 DAILY_SALES_TABLE = "ads_lingxing_sc_sales_daily_new"
 PICI_SALE_TABLE = "temp_lingxing_pici_sale"
+MONTHLY_FORECAST_REVIEW_TABLE = "ads_lingxing_all_warehouse_new_sh_v1"
+MONTHLY_SALES_ESTIMATE_TABLE = "dim_lingxing_sales_estimates_monthly_v1"
 SAFE_RISK_VALUES = {"", "安全", "正常", "数据缺失", "none", "null", "safe"}
 PICI_HORIZONS = (7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 98)
 
@@ -103,6 +105,68 @@ class ControlTowerWarehouseInventory:
     product_valid_num: float
     product_lock_num: float
     product_onway: float
+
+
+@dataclass(frozen=True)
+class MonthlyForecastReviewSnapshotRow:
+    sku: str
+    msku: str
+    fnsku: str
+    asin: str
+    store_name: str
+    country_code: str
+    shipments_country: str
+    sku_name: str
+    forecast_quantity: float
+    historical_30d_sales: float
+
+
+@dataclass(frozen=True)
+class MonthlyForecastReviewWeeklyEstimate:
+    week: str
+    week_start_date: str
+    week_end_date: str
+    forecast_quantity: float
+    actual_sales: float
+    difference: float
+    variance_ratio: float | None
+    variance_percent: float | None
+    day_count: int
+
+
+@dataclass(frozen=True)
+class MonthlyForecastReview:
+    data_source: str
+    sales_source: str
+    forecast_source: str
+    target_month: str
+    target_start_date: str
+    target_end_date: str
+    comparison_month: str
+    comparison_start_date: str
+    comparison_end_date: str
+    review_start_date: str
+    review_end_date: str
+    month_offset: int
+    snapshot_date: str
+    forecast_field: str
+    actual_field: str
+    forecast_quantity: float
+    actual_sales: float
+    difference: float
+    variance_ratio: float | None
+    variance_percent: float | None
+    result_type: str
+    result_label: str
+    snapshot_row_count: int
+    forecast_row_count: int
+    actual_row_count: int
+    notes: list[str]
+    snapshot_rows: list[MonthlyForecastReviewSnapshotRow]
+    weekly_estimates: list[MonthlyForecastReviewWeeklyEstimate]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -225,6 +289,121 @@ def get_control_tower_summary(
         warehouse_inventory=_build_warehouse_inventory(connector, country_filter, data_source),
         field_decisions=control_tower_field_decisions(),
         items=items,
+    )
+
+
+def get_monthly_forecast_review(
+    material_code: str | None = None,
+    msku: str | None = None,
+    fnsku: str | None = None,
+    store_name: str | None = None,
+    country_code: str | None = None,
+    as_of_date: str | date | None = None,
+    month_offset: int = 2,
+    connector: StiDatabaseConnector | None = None,
+) -> MonthlyForecastReview:
+    connector = connector or StiDatabaseConnector()
+    if not connector.config.ready:
+        raise RuntimeError("数据获取失败：STI 数据库未启用或连接信息不完整。")
+    target_start, target_end = _target_month_window(as_of_date=as_of_date, month_offset=month_offset)
+    review_start = target_start
+    review_end = _as_date(as_of_date) or date.today()
+    if review_end < review_start:
+        review_end = review_start
+    codes = _unique_text([_text(material_code), _text(msku), _text(fnsku)])
+    if not codes:
+        raise ValueError("material_code、msku、fnsku 至少需要一个。")
+    try:
+        snapshot_rows = connector.get_monthly_forecast_snapshot_rows(
+            material_codes=codes,
+            target_start_date=target_start.isoformat(),
+            target_end_date=target_end.isoformat(),
+            store_name=store_name,
+            country_code=country_code,
+            table_name=MONTHLY_FORECAST_REVIEW_TABLE,
+        )
+    except Exception as exc:
+        raise RuntimeError("数据获取失败：月度库存监控备份表读取失败。") from exc
+    try:
+        actual_rows = connector.get_daily_sales_detail_rows(
+            review_start.isoformat(),
+            sales_end_date=review_end.isoformat(),
+            country_code=country_code,
+            store_name=store_name,
+            material_codes=codes,
+        )
+    except Exception as exc:
+        raise RuntimeError("数据获取失败：月度实际销量读取失败。") from exc
+    try:
+        estimate_rows = connector.get_monthly_sales_estimate_rows(
+            material_codes=codes,
+            target_month=target_start.strftime("%Y-%m"),
+            target_start_date=review_start.isoformat(),
+            target_end_date=review_end.isoformat(),
+            store_name=store_name,
+            country_code=country_code,
+        )
+    except Exception as exc:
+        raise RuntimeError("数据获取失败：月度销量预估表读取失败。") from exc
+
+    forecast_quantity = sum(_number(row.get("daily_sales_quantity")) for row in estimate_rows)
+    matched_actual_rows = _matching_sales_rows(actual_rows, codes)
+    actual_sales = sum(_number(row.get("daily_sales_volume")) for row in matched_actual_rows)
+    difference = actual_sales - forecast_quantity
+    variance_ratio = difference / forecast_quantity if forecast_quantity else None
+    snapshot_date = max((_sales_stat_date(row.get("date")) for row in snapshot_rows), default="")
+    result_type, result_label = _forecast_review_result(difference, forecast_quantity, actual_sales)
+
+    return MonthlyForecastReview(
+        data_source=MONTHLY_FORECAST_REVIEW_TABLE,
+        sales_source=DAILY_SALES_TABLE,
+        forecast_source=MONTHLY_SALES_ESTIMATE_TABLE,
+        target_month=target_start.strftime("%Y-%m"),
+        target_start_date=target_start.isoformat(),
+        target_end_date=target_end.isoformat(),
+        comparison_month=_month_range_label(review_start, review_end),
+        comparison_start_date=review_start.isoformat(),
+        comparison_end_date=review_end.isoformat(),
+        review_start_date=review_start.isoformat(),
+        review_end_date=review_end.isoformat(),
+        month_offset=month_offset,
+        snapshot_date=snapshot_date,
+        forecast_field="daily_sales_quantity",
+        actual_field="volume",
+        forecast_quantity=round(forecast_quantity, 2),
+        actual_sales=round(actual_sales, 2),
+        difference=round(difference, 2),
+        variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,
+        variance_percent=round(variance_ratio * 100, 2) if variance_ratio is not None else None,
+        result_type=result_type,
+        result_label=result_label,
+        snapshot_row_count=len(snapshot_rows),
+        forecast_row_count=len(estimate_rows),
+        actual_row_count=len(matched_actual_rows),
+        notes=[
+            f"默认按运行日月份 -{month_offset} 取预测版本月；例如 6 月运行取 4 月最后一张备份。",
+            "趋势对比区间从预测版本月月初开始，截止到触发当天。",
+            f"{MONTHLY_FORECAST_REVIEW_TABLE} 先取目标月份内全表最大 date，作为该月最后一次库存监控底表备份快照。",
+            f"预测口径使用 {MONTHLY_SALES_ESTIMATE_TABLE}.daily_sales_quantity，取 month=预测版本月 且 date 落在趋势对比区间内的预估，并按周聚合。",
+            f"实际销量使用 {DAILY_SALES_TABLE}.volume，按趋势对比区间和周聚合。",
+            "差值 = 实际销量 - 预测销量；比例 = 差值 / 预测销量。",
+        ],
+        snapshot_rows=[
+            MonthlyForecastReviewSnapshotRow(
+                sku=_text(row.get("sku")),
+                msku=_text(row.get("msku")),
+                fnsku=_text(row.get("fnsku")),
+                asin=_text(row.get("asin")),
+                store_name=_text(row.get("store_name")),
+                country_code=_text(row.get("country_code")),
+                shipments_country=_text(row.get("shipments_country")),
+                sku_name=_text(row.get("sku_name")),
+                forecast_quantity=round(_number(row.get("future_30d_sales")), 2),
+                historical_30d_sales=round(_number(row.get("sale_quantity_30")), 2),
+            )
+            for row in snapshot_rows[:20]
+        ],
+        weekly_estimates=_weekly_estimates(estimate_rows, matched_actual_rows, review_start, review_end),
     )
 
 
@@ -802,6 +981,142 @@ def _build_warehouse_inventory(
         )
         for row in rows
     ]
+
+
+def _matching_sales_rows(rows: list[dict[str, Any]], codes: list[str]) -> list[dict[str, Any]]:
+    code_set = {_norm(code) for code in codes if _norm(code)}
+    if not code_set:
+        return []
+    matched = []
+    for row in rows:
+        row_codes = {
+            _norm(row.get("sku")),
+            _norm(row.get("seller_sku")),
+            _norm(row.get("fnsku")),
+        }
+        if code_set.intersection(row_codes):
+            matched.append(row)
+    return matched
+
+
+def _weekly_estimates(
+    estimate_rows: list[dict[str, Any]],
+    actual_rows: list[dict[str, Any]],
+    review_start: date,
+    review_end: date,
+) -> list[MonthlyForecastReviewWeeklyEstimate]:
+    grouped: dict[str, dict[str, Any]] = {}
+
+    for row in estimate_rows:
+        row_date = _as_date(row.get("date"))
+        if not row_date:
+            continue
+        bucket = _weekly_bucket(grouped, row_date, review_start, review_end)
+        bucket["forecast_quantity"] += _number(row.get("daily_sales_quantity"))
+
+    for row in actual_rows:
+        row_date = _as_date(row.get("date"))
+        if not row_date:
+            continue
+        bucket = _weekly_bucket(grouped, row_date, review_start, review_end)
+        bucket["actual_sales"] += _number(row.get("daily_sales_volume"))
+
+    estimates: list[MonthlyForecastReviewWeeklyEstimate] = []
+    for values in sorted(grouped.values(), key=lambda item: item["week_start"]):
+        forecast_quantity = values["forecast_quantity"]
+        actual_sales = values["actual_sales"]
+        difference = actual_sales - forecast_quantity
+        variance_ratio = difference / forecast_quantity if forecast_quantity else None
+        estimates.append(
+            MonthlyForecastReviewWeeklyEstimate(
+                week=values["week"],
+                week_start_date=values["display_start"].isoformat(),
+                week_end_date=values["display_end"].isoformat(),
+                forecast_quantity=round(forecast_quantity, 2),
+                actual_sales=round(actual_sales, 2),
+                difference=round(difference, 2),
+                variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,
+                variance_percent=round(variance_ratio * 100, 2) if variance_ratio is not None else None,
+                day_count=max((values["display_end"] - values["display_start"]).days + 1, 0),
+            )
+        )
+    return estimates
+
+
+def _weekly_bucket(
+    grouped: dict[str, dict[str, Any]],
+    row_date: date,
+    review_start: date,
+    review_end: date,
+) -> dict[str, Any]:
+    week_start = row_date - timedelta(days=row_date.weekday())
+    week_end = week_start + timedelta(days=6)
+    iso_year, iso_week, _ = row_date.isocalendar()
+    week = f"{iso_year}W{iso_week:02d}"
+    return grouped.setdefault(
+        week,
+        {
+            "week": week,
+            "week_start": week_start,
+            "display_start": max(week_start, review_start),
+            "display_end": min(week_end, review_end),
+            "forecast_quantity": 0.0,
+            "actual_sales": 0.0,
+        },
+    )
+
+
+def _month_range_label(start: date, end: date) -> str:
+    start_label = start.strftime("%Y-%m")
+    end_label = end.strftime("%Y-%m")
+    if start_label == end_label:
+        return start_label
+    return f"{start_label} 至 {end_label}"
+
+
+def _forecast_review_result(difference: float, forecast_quantity: float, actual_sales: float) -> tuple[str, str]:
+    if not forecast_quantity and not actual_sales:
+        return "no_sales", "无预测且无销量"
+    if difference > 0:
+        return "over_sold", "超额"
+    if difference < 0:
+        return "under_sold", "低卖"
+    return "matched", "持平"
+
+
+def _target_month_window(as_of_date: str | date | None = None, month_offset: int = 2) -> tuple[date, date]:
+    offset = _bounded_int(month_offset, default=2, minimum=0, maximum=24)
+    as_of = _as_date(as_of_date) or date.today()
+    month_index = as_of.year * 12 + (as_of.month - 1) - offset
+    return _month_window(month_index)
+
+
+def _next_month_window(value: date) -> tuple[date, date]:
+    month_index = value.year * 12 + value.month
+    return _month_window(month_index)
+
+
+def _month_window(month_index: int) -> tuple[date, date]:
+    year = month_index // 12
+    month = month_index % 12 + 1
+    start = date(year, month, 1)
+    next_month_index = month_index + 1
+    next_month = date(next_month_index // 12, next_month_index % 12 + 1, 1)
+    return start, next_month - timedelta(days=1)
+
+
+def _as_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
 
 
 def _selected_country(filters: dict[str, Any] | None) -> str | None:

@@ -5,7 +5,7 @@ import os
 from typing import Any
 from urllib.parse import quote
 
-from pmc_agent.control_tower import control_tower_field_decisions, get_control_tower_summary
+from pmc_agent.control_tower import control_tower_field_decisions, get_control_tower_summary, get_monthly_forecast_review
 from pmc_agent.control_tower_export import build_daily_investigation_workbook, export_filename
 from pmc_agent.external_integrations.feishu import FeishuWorkflowService
 from pmc_agent.orchestrator import PmcAgent
@@ -28,6 +28,7 @@ if FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
+        allow_origin_regex=r"https?://(127\.0\.0\.1|localhost):\d+",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -94,6 +95,26 @@ if FastAPI:
             page=page,
             page_size=page_size,
             max_rows=max_rows,
+        ).to_dict()
+
+    @app.get("/control-tower/monthly-forecast-review")
+    def control_tower_monthly_forecast_review(
+        material_code: str | None = None,
+        msku: str | None = None,
+        fnsku: str | None = None,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        as_of_date: str | None = None,
+        month_offset: int = 2,
+    ) -> dict:
+        return get_monthly_forecast_review(
+            material_code=material_code,
+            msku=msku,
+            fnsku=fnsku,
+            store_name=store_name,
+            country_code=country_code,
+            as_of_date=as_of_date,
+            month_offset=month_offset,
         ).to_dict()
 
     @app.get("/control-tower/export/daily-investigation")

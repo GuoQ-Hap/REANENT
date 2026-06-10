@@ -43,6 +43,131 @@ class FakeMainRuleConnector:
             rows = [row for row in rows if row["store_name"] == store_name]
         return rows
 
+    def get_daily_sales_detail_rows(
+        self,
+        sales_start_date: str,
+        sales_end_date: str | None = None,
+        country_code: str | None = None,
+        store_name: str | None = None,
+        material_codes: list[str] | None = None,
+    ):
+        sales_end_date = sales_end_date or sales_start_date
+        codes = {code.upper() for code in material_codes or []}
+        rows = [
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-01", 33.6),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-08", 42),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-15", 50.4),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-22", 58.8),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-29", 67.2),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-05-06", 75.6),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-05-13", 84),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-05-20", 92.4),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-05-27", 100.8),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-06-03", 109.2),
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-06-10", 126),
+            _actual_sales_row("B200", "B200-US-RED", "X001B200", "Amazon US", "US", "2026-05-06", 24),
+        ]
+        rows = [row for row in rows if _in_range(row["date"], sales_start_date, sales_end_date)]
+        if codes:
+            rows = [
+                row
+                for row in rows
+                if codes.intersection({row["sku"].upper(), row["seller_sku"].upper(), row["fnsku"].upper()})
+            ]
+        if country_code:
+            rows = [row for row in rows if row["country_code"] == country_code]
+        if store_name:
+            rows = [row for row in rows if row["store_name"] == store_name]
+        return rows
+
+    def get_monthly_forecast_snapshot_rows(
+        self,
+        material_codes: list[str],
+        target_start_date: str,
+        target_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "ads_lingxing_all_warehouse_new_sh_v1",
+        limit: int = 200,
+    ):
+        codes = {code.upper() for code in material_codes}
+        rows = [
+            {
+                "sku": "A100",
+                "msku": "A100-US-BLK",
+                "fnsku": "X001A100",
+                "asin": "B0A1000001",
+                "sku_name": "Main board",
+                "store_name": "Amazon US",
+                "country_code": "US",
+                "shipments_country": "US",
+                "future_30d_sales": 300,
+                "sale_quantity_30": 280,
+                "date": target_start_date,
+            },
+            {
+                "sku": "B200",
+                "msku": "B200-US-RED",
+                "fnsku": "X001B200",
+                "asin": "B0B2000002",
+                "sku_name": "Battery pack",
+                "store_name": "Amazon US",
+                "country_code": "US",
+                "shipments_country": "US",
+                "future_30d_sales": 90,
+                "sale_quantity_30": 80,
+                "date": target_start_date,
+            },
+        ]
+        rows = [
+            row
+            for row in rows
+            if codes.intersection({row["sku"].upper(), row["msku"].upper(), row["fnsku"].upper()})
+        ]
+        if country_code:
+            rows = [row for row in rows if row["country_code"] == country_code]
+        if store_name:
+            rows = [row for row in rows if row["store_name"] == store_name]
+        return rows[:limit]
+
+    def get_monthly_sales_estimate_rows(
+        self,
+        material_codes: list[str],
+        target_month: str,
+        target_start_date: str,
+        target_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "dim_lingxing_sales_estimates_monthly_v1",
+        limit: int = 500,
+    ):
+        codes = {code.upper() for code in material_codes}
+        rows = [
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W14", "2026-04-01", 28),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W15", "2026-04-08", 35),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W16", "2026-04-15", 42),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W17", "2026-04-22", 49),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W18", "2026-04-29", 56),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W19", "2026-05-06", 63),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W20", "2026-05-13", 70),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W21", "2026-05-20", 77),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W22", "2026-05-27", 84),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W23", "2026-06-03", 91),
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W24", "2026-06-10", 105),
+            _estimate_row("B200", "B200-US-RED", "X001B200", "Amazon US", "US", target_month, "2026W19", "2026-05-06", 20),
+        ]
+        rows = [row for row in rows if _in_range(row["date"], target_start_date, target_end_date)]
+        rows = [
+            row
+            for row in rows
+            if codes.intersection({row["sku"].upper(), row["msku"].upper(), row["fnsku"].upper()})
+        ]
+        if country_code:
+            rows = [row for row in rows if row["country_code"] == country_code]
+        if store_name:
+            rows = [row for row in rows if row["store_name"] == store_name]
+        return rows[:limit]
+
     def get_pici_shortage_rows(self, store_name: str | None = None, table_name: str = ""):
         rows = [
             _pici_row("X001A100", "Amazon US", "40/80(-40)"),
@@ -150,7 +275,60 @@ def _pici_row(fnsku: str, store_name: str, value: str) -> dict[str, Any]:
     return row
 
 
+def _estimate_row(
+    sku: str,
+    msku: str,
+    fnsku: str,
+    store_name: str,
+    country_code: str,
+    month: str,
+    week: str,
+    forecast_date: str,
+    quantity: float,
+) -> dict[str, Any]:
+    return {
+        "month": month,
+        "date": forecast_date,
+        "week": week,
+        "sku": sku,
+        "msku": msku,
+        "fnsku": fnsku,
+        "asin": "",
+        "store_name": store_name,
+        "country_code": country_code,
+        "daily_sales_quantity": quantity,
+        "total": quantity,
+    }
+
+
+def _actual_sales_row(
+    sku: str,
+    seller_sku: str,
+    fnsku: str,
+    store_name: str,
+    country_code: str,
+    sales_date: str,
+    volume: float,
+) -> dict[str, Any]:
+    return {
+        "date": sales_date,
+        "sku": sku,
+        "seller_sku": seller_sku,
+        "fnsku": fnsku,
+        "store_name": store_name,
+        "country_code": country_code,
+        "daily_sales_volume": volume,
+    }
+
+
 def _day_count(start: str, end: str) -> int:
     start_date = datetime.strptime(start, "%Y-%m-%d").date()
     end_date = datetime.strptime(end, "%Y-%m-%d").date()
     return (end_date - start_date).days + 1
+
+
+def _in_range(value: str, start: str, end: str) -> bool:
+    row_date = datetime.strptime(value, "%Y-%m-%d").date()
+    start_date = datetime.strptime(start, "%Y-%m-%d").date()
+    end_date = datetime.strptime(end, "%Y-%m-%d").date()
+    return start_date <= row_date <= end_date

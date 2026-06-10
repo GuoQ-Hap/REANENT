@@ -1,6 +1,6 @@
 import unittest
 
-from pmc_agent.control_tower import control_tower_field_decisions, get_control_tower_summary
+from pmc_agent.control_tower import control_tower_field_decisions, get_control_tower_summary, get_monthly_forecast_review
 from pmc_agent.connectors.database import StiDatabaseConfig, StiDatabaseConnector
 from pmc_agent.schema_catalog import ALL_WAREHOUSE_CATALOG, FieldPack, field_pack_for_task
 from pmc_agent.domain import TaskType
@@ -98,6 +98,46 @@ class ControlTowerTests(unittest.TestCase):
         self.assertGreater(overstock.pagination["total_count"], 0)
         self.assertTrue(all(item.stockout_risk_level != "normal" for item in stockout.items))
         self.assertTrue(all(item.overstock_risk_level != "normal" for item in overstock.items))
+
+    def test_monthly_forecast_review_compares_weekly_forecast_to_sales_since_target_month(self):
+        connector = FakeMainRuleConnector()
+
+        review = get_monthly_forecast_review(
+            material_code="A100",
+            msku="A100-US-BLK",
+            store_name="Amazon US",
+            country_code="US",
+            as_of_date="2026-06-10",
+            connector=connector,
+        )
+
+        self.assertEqual(review.target_month, "2026-04")
+        self.assertEqual(review.target_start_date, "2026-04-01")
+        self.assertEqual(review.target_end_date, "2026-04-30")
+        self.assertEqual(review.comparison_month, "2026-04 至 2026-06")
+        self.assertEqual(review.comparison_start_date, "2026-04-01")
+        self.assertEqual(review.comparison_end_date, "2026-06-10")
+        self.assertEqual(review.review_start_date, "2026-04-01")
+        self.assertEqual(review.review_end_date, "2026-06-10")
+        self.assertEqual(review.forecast_source, "dim_lingxing_sales_estimates_monthly_v1")
+        self.assertEqual(review.forecast_field, "daily_sales_quantity")
+        self.assertEqual(review.forecast_quantity, 700)
+        self.assertEqual(review.actual_sales, 840)
+        self.assertEqual(review.difference, 140)
+        self.assertEqual(review.variance_percent, 20)
+        self.assertEqual(review.result_type, "over_sold")
+        self.assertEqual(review.result_label, "超额")
+        self.assertEqual(review.forecast_row_count, 11)
+        self.assertEqual(review.actual_row_count, 11)
+        self.assertEqual(len(review.weekly_estimates), 11)
+        first_week = review.weekly_estimates[0]
+        self.assertEqual(first_week.week, "2026W14")
+        self.assertEqual(first_week.week_start_date, "2026-04-01")
+        self.assertEqual(first_week.week_end_date, "2026-04-05")
+        self.assertEqual(first_week.forecast_quantity, 28)
+        self.assertEqual(first_week.actual_sales, 33.6)
+        self.assertEqual(first_week.difference, 5.6)
+        self.assertEqual(first_week.variance_percent, 20)
 
     def test_field_decisions_include_and_exclude_groups(self):
         decisions = control_tower_field_decisions()

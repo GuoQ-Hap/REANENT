@@ -276,6 +276,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(price_list_seller_sku, '')) AS seller_sku,
                 COALESCE(store_name, '') AS store_name,
                 UPPER(COALESCE(country_code, '')) AS country_code,
+                UPPER(COALESCE(fnsku, '')) AS fnsku,
                 SUM(COALESCE(volume, 0)) AS daily_sales_volume,
                 SUM(COALESCE(amount, 0)) AS daily_sales_amount,
                 SUM(COALESCE(order_items, 0)) AS daily_order_items
@@ -287,13 +288,213 @@ class StiDatabaseConnector(ConnectorLogMixin):
                 UPPER(COALESCE(sku, '')),
                 UPPER(COALESCE(price_list_seller_sku, '')),
                 COALESCE(store_name, ''),
-                UPPER(COALESCE(country_code, ''))
+                UPPER(COALESCE(country_code, '')),
+                UPPER(COALESCE(fnsku, ''))
         """
         country = (country_code or "").strip().upper()
         store = (store_name or "").strip()
         with self._connect() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(sql, (sales_start_date, sales_end_date, country, country, store, store))
+                return list(cursor.fetchall())
+
+    def get_daily_sales_detail_rows(
+        self,
+        sales_start_date: str,
+        sales_end_date: str | None = None,
+        country_code: str | None = None,
+        store_name: str | None = None,
+        material_codes: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return daily SKU sales rows for time-series comparisons."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        sales_end_date = sales_end_date or sales_start_date
+        codes = [code.strip().upper() for code in (material_codes or []) if code and code.strip()]
+        codes = list(dict.fromkeys(codes))
+        code_filter = ""
+        code_params: list[Any] = []
+        if codes:
+            placeholders = ", ".join(["%s"] * len(codes))
+            code_filter = f"""
+              AND (
+                UPPER(COALESCE(sku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(price_list_seller_sku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+              )
+            """
+            code_params = [*codes, *codes, *codes]
+        sql = f"""
+            SELECT
+                date,
+                UPPER(COALESCE(sku, '')) AS sku,
+                UPPER(COALESCE(price_list_seller_sku, '')) AS seller_sku,
+                COALESCE(store_name, '') AS store_name,
+                UPPER(COALESCE(country_code, '')) AS country_code,
+                UPPER(COALESCE(fnsku, '')) AS fnsku,
+                SUM(COALESCE(volume, 0)) AS daily_sales_volume
+            FROM ads_lingxing_sc_sales_daily_new
+            WHERE date BETWEEN %s AND %s
+              {code_filter}
+              AND (%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))
+              AND (%s = '' OR COALESCE(store_name, '') = %s)
+            GROUP BY
+                date,
+                UPPER(COALESCE(sku, '')),
+                UPPER(COALESCE(price_list_seller_sku, '')),
+                COALESCE(store_name, ''),
+                UPPER(COALESCE(country_code, '')),
+                UPPER(COALESCE(fnsku, ''))
+        """
+        country = (country_code or "").strip().upper()
+        store = (store_name or "").strip()
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, [sales_start_date, sales_end_date, *code_params, country, country, store, store])
+                return list(cursor.fetchall())
+
+    def get_monthly_forecast_snapshot_rows(
+        self,
+        material_codes: list[str],
+        target_start_date: str,
+        target_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "ads_lingxing_all_warehouse_new_sh_v1",
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Return the latest monthly backup rows for a SKU in the target month."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        allowed_tables = {"ads_lingxing_all_warehouse_new_sh_v1"}
+        if table_name not in allowed_tables:
+            raise ValueError(f"unsupported monthly forecast table: {table_name}")
+        codes = [code.strip().upper() for code in material_codes if code and code.strip()]
+        codes = list(dict.fromkeys(codes))
+        if not codes:
+            return []
+        placeholders = ", ".join(["%s"] * len(codes))
+        conditions = [
+            "date BETWEEN %s AND %s",
+            f"""(
+                UPPER(COALESCE(sku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(msku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+            )""",
+            "(%s = '' OR COALESCE(store_name, '') = %s)",
+            "(%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))",
+        ]
+        params: list[Any] = [
+            target_start_date,
+            target_end_date,
+            *codes,
+            *codes,
+            *codes,
+            (store_name or "").strip(),
+            (store_name or "").strip(),
+            (country_code or "").strip().upper(),
+            (country_code or "").strip().upper(),
+        ]
+        where_sql = " AND ".join(conditions)
+        sql = f"""
+            SELECT
+                sku,
+                msku,
+                fnsku,
+                asin,
+                store_name,
+                country_code,
+                shipments_country,
+                sku_name,
+                COALESCE(future_30d_sales, 0) AS future_30d_sales,
+                COALESCE(sale_quantity_30, 0) AS sale_quantity_30,
+                date
+            FROM {table_name}
+            WHERE {where_sql}
+              AND date = (
+                SELECT MAX(date)
+                FROM {table_name}
+                WHERE date BETWEEN %s AND %s
+              )
+            ORDER BY COALESCE(future_30d_sales, 0) DESC
+            LIMIT {_bounded_limit(limit)}
+        """
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, [*params, target_start_date, target_end_date])
+                return list(cursor.fetchall())
+
+    def get_monthly_sales_estimate_rows(
+        self,
+        material_codes: list[str],
+        target_month: str,
+        target_start_date: str,
+        target_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "dim_lingxing_sales_estimates_monthly_v1",
+        limit: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Return monthly sales-estimate rows for the target natural month."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        allowed_tables = {"dim_lingxing_sales_estimates_monthly_v1"}
+        if table_name not in allowed_tables:
+            raise ValueError(f"unsupported sales estimate table: {table_name}")
+        codes = [code.strip().upper() for code in material_codes if code and code.strip()]
+        codes = list(dict.fromkeys(codes))
+        if not codes:
+            return []
+        placeholders = ", ".join(["%s"] * len(codes))
+        sql = f"""
+            SELECT
+                month,
+                date,
+                week,
+                sku,
+                msku,
+                fnsku,
+                asin,
+                store_name,
+                country_code,
+                COALESCE(daily_sales_quantity, 0) AS daily_sales_quantity,
+                COALESCE(total, 0) AS total
+            FROM {table_name}
+            WHERE month = %s
+              AND date BETWEEN %s AND %s
+              AND (
+                UPPER(COALESCE(sku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(msku, '')) IN ({placeholders})
+                OR UPPER(COALESCE(fnsku, '')) IN ({placeholders})
+              )
+              AND (%s = '' OR COALESCE(store_name, '') = %s)
+              AND (%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))
+            ORDER BY date, week
+            LIMIT {_bounded_limit(limit)}
+        """
+        store = (store_name or "").strip()
+        country = (country_code or "").strip().upper()
+        params: list[Any] = [
+            target_month,
+            target_start_date,
+            target_end_date,
+            *codes,
+            *codes,
+            *codes,
+            store,
+            store,
+            country,
+            country,
+        ]
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params)
                 return list(cursor.fetchall())
 
     def get_pici_shortage_rows(self, store_name: str | None = None, table_name: str = "temp_lingxing_pici_sale") -> list[dict[str, Any]]:
