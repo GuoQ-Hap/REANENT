@@ -1644,25 +1644,80 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
 }
 
 function ForecastAdSignalStrip({ data }) {
-  const maxSpend = Math.max(...data.map((point) => point.adSpend), 1);
+  const width = 680;
+  const height = 150;
+  const margin = { top: 18, right: 56, bottom: 30, left: 54 };
+  const xScale = d3
+    .scalePoint()
+    .domain(data.map((point) => point.week))
+    .range([margin.left, width - margin.right])
+    .padding(0.5);
+  const maxSpend = d3.max(data, (point) => point.adSpend) || 1;
+  const maxAcos = d3.max(data, (point) => point.adAcos || 0) || 1;
+  const spendScale = d3
+    .scaleLinear()
+    .domain([0, maxSpend * 1.15])
+    .nice()
+    .range([height - margin.bottom, margin.top]);
+  const acosScale = d3
+    .scaleLinear()
+    .domain([0, maxAcos * 1.15])
+    .nice()
+    .range([height - margin.bottom, margin.top]);
+  const spendLine = d3
+    .line()
+    .x((point) => xScale(point.week) || margin.left)
+    .y((point) => spendScale(point.adSpend))
+    .curve(d3.curveMonotoneX)(data);
+  const acosLine = d3
+    .line()
+    .defined((point) => point.adAcos !== null)
+    .x((point) => xScale(point.week) || margin.left)
+    .y((point) => acosScale(point.adAcos || 0))
+    .curve(d3.curveMonotoneX)(data);
+  const spendTicks = spendScale.ticks(3);
+  const acosTicks = acosScale.ticks(3);
+  const labelEvery = Math.max(1, Math.ceil(data.length / 4));
 
   return (
     <div className="forecast-ad-strip" aria-label="周度广告参考指标">
       <div className="forecast-ad-head">
         <span>广告参考</span>
-        <small>广告花费 / ACOS，仅用于解释销量波动</small>
+        <div className="forecast-ad-legend">
+          <span className="spend">广告花费</span>
+          <span className="acos">ACOS</span>
+        </div>
       </div>
-      <div className="forecast-ad-grid" style={{ gridTemplateColumns: `repeat(${data.length}, minmax(58px, 1fr))` }}>
-        {data.map((point) => (
-          <div className="forecast-ad-cell" key={`ad-${point.week}`} title={`${point.label} · 广告花费 ${formatMoney(point.adSpend)} · ACOS ${formatRatioPercent(point.adAcos)}`}>
-            <div className="forecast-ad-bar" aria-hidden="true">
-              <span style={{ height: `${Math.max((point.adSpend / maxSpend) * 100, point.adSpend > 0 ? 8 : 0)}%` }} />
-            </div>
-            <strong>{formatMoney(point.adSpend)}</strong>
-            <small>{formatRatioPercent(point.adAcos)}</small>
-          </div>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img">
+        {spendTicks.map((tick) => (
+          <g key={`ad-spend-${tick}`}>
+            <line x1={margin.left} x2={width - margin.right} y1={spendScale(tick)} y2={spendScale(tick)} />
+            <text x={margin.left - 9} y={spendScale(tick) + 4} textAnchor="end">
+              {formatMoney(tick)}
+            </text>
+          </g>
         ))}
-      </div>
+        {acosTicks.map((tick) => (
+          <text key={`ad-acos-${tick}`} className="acos-axis-label" x={width - margin.right + 9} y={acosScale(tick) + 4}>
+            {formatRatioPercent(tick)}
+          </text>
+        ))}
+        <path className="ad-spend-line" d={spendLine || ""} />
+        <path className="ad-acos-line" d={acosLine || ""} />
+        {data.map((point) => (
+          <React.Fragment key={`ad-point-${point.week}`}>
+            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={spendScale(point.adSpend)} r="3.5" />
+            {point.adAcos !== null && <circle className="ad-acos-dot" cx={xScale(point.week)} cy={acosScale(point.adAcos)} r="3.5" />}
+          </React.Fragment>
+        ))}
+        {data.map((point, index) =>
+          index % labelEvery === 0 || index === data.length - 1 ? (
+            <text key={`ad-label-${point.week}`} className="ad-x-label" x={xScale(point.week)} y={height - 10} textAnchor="middle">
+              {point.labelStart || point.week}
+            </text>
+          ) : null
+        )}
+      </svg>
     </div>
   );
 }
