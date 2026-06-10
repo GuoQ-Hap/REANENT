@@ -1303,9 +1303,7 @@ function SkuDetailPanel({
                 ["关键缺口", item.pici_key_gap],
               ]}
             />
-            <div className="detail-tags">
-              {shortageSummary.segments.length > 0 ? shortageSummary.segments.map((segment) => <span key={segment}>{segment}</span>) : <span>暂无断货段</span>}
-            </div>
+            <ShortageWeekChart nodes={shortageSummary.weeklyNodes || []} />
             <div className="pici-list">
               {piciEntries.length > 0 ? (
                 piciEntries.map(([key, value]) => (
@@ -1471,6 +1469,33 @@ function SkuDetailPanel({
             <div className="action-list empty" aria-label="建议动作待填写" />
           </DetailSection>
     </>
+  );
+}
+
+function ShortageWeekChart({ nodes }) {
+  if (!nodes.length) {
+    return (
+      <div className="shortage-week-chart empty">
+        <span>暂无断货节点</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="shortage-week-chart" aria-label="周维度断货节点图">
+      {nodes.map((node) => (
+        <div className="shortage-week-node" key={node.week}>
+          <div className="shortage-week-label">
+            <span>第 {node.week} 周</span>
+            <strong>断 {formatNumber(node.shortageDays)} 天</strong>
+          </div>
+          <div className="shortage-week-track" aria-hidden="true">
+            <span style={{ width: `${Math.min((node.shortageDays / 7) * 100, 100)}%` }} />
+          </div>
+          <small>{node.ranges.join("、")}</small>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -1968,6 +1993,7 @@ function piciShortageWindowSummary(item) {
   let previousForecast = 0;
   let totalDays = 0;
   const segments = [];
+  const weeklyNodes = new Map();
   let firstStartDay = null;
 
   entries.forEach((entry) => {
@@ -1985,13 +2011,37 @@ function piciShortageWindowSummary(item) {
       totalDays += shortageDays;
       firstStartDay = firstStartDay === null ? startDay : Math.min(firstStartDay, startDay);
       segments.push(formatShortageSegment(startDay, shortageDays));
+      addShortageWeekNodes(weeklyNodes, startDay, shortageDays);
     }
 
     previousHorizon = entry.horizon;
     previousAvailable = entry.available;
     previousForecast = entry.forecast;
   });
-  return { totalDays, firstStartDay: firstStartDay ?? item.pici_first_shortage_days ?? 0, segments };
+  return {
+    totalDays,
+    firstStartDay: firstStartDay ?? item.pici_first_shortage_days ?? 0,
+    segments,
+    weeklyNodes: Array.from(weeklyNodes.values()).sort((a, b) => a.week - b.week),
+  };
+}
+
+function addShortageWeekNodes(weeklyNodes, startDay, shortageDays) {
+  let cursor = Math.max(Math.floor(startDay), 1);
+  let remaining = Math.max(Math.ceil(shortageDays), 0);
+
+  while (remaining > 0) {
+    const week = Math.max(Math.ceil(cursor / 7), 1);
+    const weekEndDay = week * 7;
+    const daysInWeek = Math.min(remaining, weekEndDay - cursor + 1);
+    const endDay = cursor + daysInWeek - 1;
+    const node = weeklyNodes.get(week) || { week, shortageDays: 0, ranges: [] };
+    node.shortageDays += daysInWeek;
+    node.ranges.push(formatShortageDayRange(cursor, endDay));
+    weeklyNodes.set(week, node);
+    cursor = endDay + 1;
+    remaining -= daysInWeek;
+  }
 }
 
 function parsePiciValue(value) {
@@ -2008,6 +2058,11 @@ function parsePiciValue(value) {
 function formatShortageSegment(startDay, shortageDays) {
   const startLabel = startDay <= 0 ? "今天起" : `第 ${formatNumber(startDay)} 天起`;
   return `${startLabel}断 ${formatNumber(shortageDays)} 天`;
+}
+
+function formatShortageDayRange(startDay, endDay) {
+  if (startDay === endDay) return `第 ${formatNumber(startDay)} 天`;
+  return `第 ${formatNumber(startDay)}-${formatNumber(endDay)} 天`;
 }
 
 function previousDate() {

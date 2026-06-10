@@ -1943,19 +1943,79 @@ tbody tr:hover {
   line-height: 1.4;
 }
 
-.detail-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.shortage-week-chart {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
   margin-top: 10px;
 }
 
-.detail-tags span {
-  padding: 4px 8px;
-  color: #041219;
-  background: var(--gold);
+.shortage-week-chart.empty {
+  display: block;
+  padding: 10px 12px;
+  color: #86bac4;
+  background: rgba(2, 26, 36, 0.7);
+  border: 1px solid rgba(35, 232, 255, 0.12);
+  font-size: 12px;
+}
+
+.shortage-week-node {
+  min-width: 0;
+  padding: 8px;
+  background: rgba(2, 26, 36, 0.72);
+  border: 1px solid rgba(255, 203, 46, 0.28);
+}
+
+.shortage-week-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: #add9df;
+}
+
+.shortage-week-label span,
+.shortage-week-label strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shortage-week-label span {
   font-size: 12px;
   font-weight: 800;
+}
+
+.shortage-week-label strong {
+  color: #ffd36e;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 14px;
+}
+
+.shortage-week-track {
+  height: 10px;
+  margin-top: 7px;
+  overflow: hidden;
+  background: rgba(143, 205, 216, 0.14);
+}
+
+.shortage-week-track span {
+  display: block;
+  min-width: 8px;
+  height: 100%;
+  background: var(--gold);
+  box-shadow: 0 0 14px rgba(255, 203, 46, 0.2);
+}
+
+.shortage-week-node small {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #8dc2cb;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .forecast-review-head {
