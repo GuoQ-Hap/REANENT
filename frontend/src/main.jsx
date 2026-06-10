@@ -1379,10 +1379,9 @@ function SkuDetailPanel({
                     ["快照日期", forecastReview.snapshot_date],
                     ["总预测", formatNumber(forecastReview.forecast_quantity)],
                     ["总销量", formatNumber(forecastReview.actual_sales)],
-                    ["广告花费", formatMoney(forecastReview.ad_spend)],
                     ["广告销售额", formatMoney(forecastReview.ad_sales_amount)],
                     ["广告订单量", formatNumber(forecastReview.ad_order_quantity)],
-                    ["自然销量", formatNumber(forecastReview.organic_sales)],
+                    ["自然销量预估", formatNumber(forecastReview.organic_sales)],
                     ["ACOS", formatRatioPercent(forecastReview.ad_acos)],
                     ["总差值", formatSignedNumber(forecastReview.difference)],
                     ["差值比例", formatPercent(forecastReview.variance_percent)],
@@ -1401,10 +1400,10 @@ function SkuDetailPanel({
                     <div className="weekly-estimate-list">
                       {forecastReview.weekly_estimates.map((week) => (
                         <div key={week.week}>
-                          <span>{week.week}</span>
+                          <span>{formatFullDateRange(week.week_start_date, week.week_end_date) || week.week}</span>
                           <strong>{formatNumber(week.actual_sales)} / {formatNumber(week.forecast_quantity)}</strong>
-                          <small>{week.week_start_date} 至 {week.week_end_date} · {formatSignedNumber(week.difference)} · {formatPercent(week.variance_percent)}</small>
-                          <small>自然 {formatNumber(week.organic_sales)} · 广告 {formatMoney(week.ad_spend)} · ACOS {formatRatioPercent(week.ad_acos)}</small>
+                          <small>{formatSignedNumber(week.difference)} · {formatPercent(week.variance_percent)}</small>
+                          <small>自然销量预估 {formatNumber(week.organic_sales)} · ACOS {formatRatioPercent(week.ad_acos)}</small>
                         </div>
                       ))}
                     </div>
@@ -1551,11 +1550,12 @@ function HandlingRecordsPanel({ records, input, onInputChange, onAdd }) {
 function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const data = (points || []).map((point) => ({
     week: point.week,
-    label: formatChartDateRange(point.week_start_date, point.week_end_date) || point.week,
+    label: formatFullDateRange(point.week_start_date, point.week_end_date) || point.week,
+    labelStart: formatFullDate(point.week_start_date),
+    labelEnd: formatFullDate(point.week_end_date),
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
     organic: Number(point.organic_sales || 0),
-    adSpend: Number(point.ad_spend || 0),
   }));
   if (!data.length) return null;
 
@@ -1565,8 +1565,8 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   ];
   const maxTotal = Math.max(...totals.map((item) => item.value), 1);
   const width = 680;
-  const height = 250;
-  const margin = { top: 22, right: 58, bottom: 46, left: 54 };
+  const height = 268;
+  const margin = { top: 22, right: 28, bottom: 66, left: 54 };
   const xScale = d3
     .scalePoint()
     .domain(data.map((point) => point.week))
@@ -1578,37 +1578,23 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     .domain([0, maxValue * 1.15])
     .nice()
     .range([height - margin.bottom, margin.top]);
-  const maxAdSpend = d3.max(data, (point) => point.adSpend) || 1;
-  const adScale = d3
-    .scaleLinear()
-    .domain([0, maxAdSpend * 1.15])
-    .nice()
-    .range([height - margin.bottom, margin.top]);
   const line = d3
     .line()
     .x((point) => xScale(point.week) || margin.left)
     .y((point) => yScale(point.value))
     .curve(d3.curveMonotoneX);
-  const adLine = d3
-    .line()
-    .x((point) => xScale(point.week) || margin.left)
-    .y((point) => adScale(point.value))
-    .curve(d3.curveMonotoneX);
   const forecastLine = line(data.map((point) => ({ week: point.week, value: point.forecast })));
   const actualLine = line(data.map((point) => ({ week: point.week, value: point.actual })));
   const organicLine = line(data.map((point) => ({ week: point.week, value: point.organic })));
-  const adSpendLine = adLine(data.map((point) => ({ week: point.week, value: point.adSpend })));
   const yTicks = yScale.ticks(4);
-  const adTicks = adScale.ticks(4);
-  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+  const labelEvery = Math.max(1, Math.ceil(data.length / 4));
 
   return (
     <div className="forecast-chart" aria-label="周度预测和实际销量折线图">
       <div className="forecast-chart-legend">
         <span className="forecast">预测</span>
         <span className="actual">实际</span>
-        <span className="organic">自然</span>
-        <span className="ad-spend">广告花费</span>
+        <span className="organic">自然销量预估</span>
       </div>
       <div className="forecast-total-bars" aria-label="预测总量和实际总量">
         {totals.map((item) => (
@@ -1631,27 +1617,21 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
             </text>
           </g>
         ))}
-        {adTicks.map((tick) => (
-          <text key={`ad-${tick}`} className="ad-axis-label" x={width - margin.right + 10} y={adScale(tick) + 4}>
-            {formatNumber(tick)}
-          </text>
-        ))}
         <path className="forecast-line" d={forecastLine || ""} />
         <path className="actual-line" d={actualLine || ""} />
         <path className="organic-line" d={organicLine || ""} />
-        <path className="ad-spend-line" d={adSpendLine || ""} />
         {data.map((point) => (
           <React.Fragment key={point.week}>
             <circle className="forecast-dot" cx={xScale(point.week)} cy={yScale(point.forecast)} r="4" />
             <circle className="actual-dot" cx={xScale(point.week)} cy={yScale(point.actual)} r="4" />
             <circle className="organic-dot" cx={xScale(point.week)} cy={yScale(point.organic)} r="4" />
-            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={adScale(point.adSpend)} r="4" />
           </React.Fragment>
         ))}
         {data.map((point, index) =>
           index % labelEvery === 0 || index === data.length - 1 ? (
-            <text key={point.week} className="x-label" x={xScale(point.week)} y={height - 18} textAnchor="middle">
-              {point.label}
+            <text key={point.week} className="x-label" x={xScale(point.week)} y={height - 36} textAnchor="middle">
+              <tspan x={xScale(point.week)}>{point.labelStart || point.label}</tspan>
+              {point.labelEnd && <tspan x={xScale(point.week)} dy="13">至 {point.labelEnd}</tspan>}
             </text>
           ) : null
         )}
@@ -1729,17 +1709,17 @@ function formatNumber(value) {
   return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 1 });
 }
 
-function formatChartDateRange(start, end) {
-  const startText = formatCompactDate(start);
-  const endText = formatCompactDate(end);
+function formatFullDateRange(start, end) {
+  const startText = formatFullDate(start);
+  const endText = formatFullDate(end);
   if (!startText || !endText) return "";
-  return `${startText}~${endText}`;
+  return `${startText} 至 ${endText}`;
 }
 
-function formatCompactDate(value) {
+function formatFullDate(value) {
   const parts = String(value || "").split("-");
   if (parts.length !== 3) return "";
-  return `${parts[1]}-${parts[2]}`;
+  return `${parts[0]}-${parts[1]}-${parts[2]}`;
 }
 
 function formatSignedNumber(value) {

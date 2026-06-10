@@ -2106,10 +2106,6 @@ tbody tr:hover {
   background: #ff9f6e;
 }
 
-.forecast-chart-legend .ad-spend::before {
-  background: #7ee28b;
-}
-
 .forecast-total-bars {
   display: grid;
   gap: 10px;
@@ -2189,12 +2185,7 @@ tbody tr:hover {
 
 .forecast-chart .x-label {
   fill: #9ed0d9;
-  font-size: 10px;
-}
-
-.forecast-chart .ad-axis-label {
-  fill: #8ed99b;
-  font-size: 10px;
+  font-size: 9px;
 }
 
 .forecast-chart path {
@@ -2217,11 +2208,6 @@ tbody tr:hover {
   stroke-width: 2.5;
 }
 
-.forecast-chart .ad-spend-line {
-  stroke: #7ee28b;
-  stroke-dasharray: 6 5;
-}
-
 .forecast-chart .forecast-dot {
   fill: #ffd36e;
   stroke: #041219;
@@ -2236,12 +2222,6 @@ tbody tr:hover {
 
 .forecast-chart .organic-dot {
   fill: #ff9f6e;
-  stroke: #041219;
-  stroke-width: 1.5;
-}
-
-.forecast-chart .ad-spend-dot {
-  fill: #7ee28b;
   stroke: #041219;
   stroke-width: 1.5;
 }
