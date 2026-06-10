@@ -2226,6 +2226,85 @@ tbody tr:hover {
   stroke-width: 1.5;
 }
 
+.forecast-ad-strip {
+  margin: 2px 10px 0 54px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(143, 205, 216, 0.1);
+}
+
+.forecast-ad-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: #8fc6cf;
+  font-size: 11px;
+}
+
+.forecast-ad-head span {
+  color: #b5dde4;
+  font-weight: 800;
+}
+
+.forecast-ad-head small {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-ad-grid {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.forecast-ad-cell {
+  min-width: 58px;
+  color: #92c3cc;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 10px;
+  text-align: center;
+}
+
+.forecast-ad-cell strong,
+.forecast-ad-cell small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.forecast-ad-cell strong {
+  margin-top: 3px;
+  color: #b9e2e8;
+  font-weight: 700;
+}
+
+.forecast-ad-cell small {
+  margin-top: 1px;
+  color: #7fb4be;
+}
+
+.forecast-ad-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 28px;
+  border-bottom: 1px solid rgba(143, 205, 216, 0.16);
+}
+
+.forecast-ad-bar span {
+  width: 56%;
+  min-height: 0;
+  border-radius: 3px 3px 0 0;
+  background: rgba(126, 226, 139, 0.58);
+  box-shadow: 0 0 10px rgba(126, 226, 139, 0.12);
+}
+
 .weekly-estimate-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

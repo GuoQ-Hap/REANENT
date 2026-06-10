@@ -1556,6 +1556,8 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
     organic: Number(point.organic_sales || 0),
+    adSpend: Number(point.ad_spend || 0),
+    adAcos: point.ad_acos === null || point.ad_acos === undefined ? null : Number(point.ad_acos),
   }));
   if (!data.length) return null;
 
@@ -1636,6 +1638,31 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
           ) : null
         )}
       </svg>
+      <ForecastAdSignalStrip data={data} />
+    </div>
+  );
+}
+
+function ForecastAdSignalStrip({ data }) {
+  const maxSpend = Math.max(...data.map((point) => point.adSpend), 1);
+
+  return (
+    <div className="forecast-ad-strip" aria-label="周度广告参考指标">
+      <div className="forecast-ad-head">
+        <span>广告参考</span>
+        <small>广告花费 / ACOS，仅用于解释销量波动</small>
+      </div>
+      <div className="forecast-ad-grid" style={{ gridTemplateColumns: `repeat(${data.length}, minmax(58px, 1fr))` }}>
+        {data.map((point) => (
+          <div className="forecast-ad-cell" key={`ad-${point.week}`} title={`${point.label} · 广告花费 ${formatMoney(point.adSpend)} · ACOS ${formatRatioPercent(point.adAcos)}`}>
+            <div className="forecast-ad-bar" aria-hidden="true">
+              <span style={{ height: `${Math.max((point.adSpend / maxSpend) * 100, point.adSpend > 0 ? 8 : 0)}%` }} />
+            </div>
+            <strong>{formatMoney(point.adSpend)}</strong>
+            <small>{formatRatioPercent(point.adAcos)}</small>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
