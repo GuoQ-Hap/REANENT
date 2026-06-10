@@ -1545,6 +1545,7 @@ function HandlingRecordsPanel({ records, input, onInputChange, onAdd }) {
 function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const data = (points || []).map((point) => ({
     week: point.week,
+    label: formatChartDateRange(point.week_start_date, point.week_end_date) || point.week,
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
   }));
@@ -1617,7 +1618,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
         {data.map((point, index) =>
           index % labelEvery === 0 || index === data.length - 1 ? (
             <text key={point.week} className="x-label" x={xScale(point.week)} y={height - 18} textAnchor="middle">
-              {point.week}
+              {point.label}
             </text>
           ) : null
         )}
@@ -1693,6 +1694,19 @@ function FieldDecisionTable({ fields }) {
 function formatNumber(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 1 });
+}
+
+function formatChartDateRange(start, end) {
+  const startText = formatCompactDate(start);
+  const endText = formatCompactDate(end);
+  if (!startText || !endText) return "";
+  return `${startText}~${endText}`;
+}
+
+function formatCompactDate(value) {
+  const parts = String(value || "").split("-");
+  if (parts.length !== 3) return "";
+  return `${parts[1]}-${parts[2]}`;
 }
 
 function formatSignedNumber(value) {
