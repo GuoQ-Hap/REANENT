@@ -1480,6 +1480,7 @@ function SupplyFishboneChart({ weeks }) {
       </div>
     );
   }
+  const rows = chunkArray(weeks, 5);
 
   return (
     <div className="supply-fishbone" aria-label="周维度供货断货鱼骨图">
@@ -1488,39 +1489,59 @@ function SupplyFishboneChart({ weeks }) {
         <span className="shortage">断货</span>
         <span className="arrival">到货</span>
       </div>
-      <div className="supply-fishbone-track">
-        {weeks.map((week) => (
-          <div className={`supply-week-node ${week.shortageDays > 0 ? "has-shortage" : "ok"}`} key={week.week}>
-            <div className="supply-arrivals">
-              {week.arrivals.length > 0 ? (
-                week.arrivals.map((arrival, index) => (
-                  <span key={`${week.week}-${arrival.day}-${index}`}>到货 +{formatNumber(arrival.quantity)}</span>
-                ))
-              ) : (
-                <span className="placeholder">无到货</span>
-              )}
+      <div className="supply-fishbone-rows">
+        {rows.map((row) => {
+          const rowShortageDays = row.reduce((total, week) => total + week.shortageDays, 0);
+          return (
+            <div className="supply-fishbone-row" key={`${row[0].week}-${row[row.length - 1].week}`}>
+              <div className="supply-row-summary">
+                <span>第 {row[0].week}-{row[row.length - 1].week} 周</span>
+                <strong>总计断货 {formatNumber(rowShortageDays)} 天</strong>
+              </div>
+              <div className="supply-fishbone-track">
+                {row.map((week) => (
+                  <div className={`supply-week-node ${week.shortageDays > 0 ? "has-shortage" : "ok"}`} key={week.week}>
+                    <div className="supply-arrivals">
+                      {week.arrivals.length > 0 ? (
+                        week.arrivals.map((arrival, index) => (
+                          <span key={`${week.week}-${arrival.day}-${index}`}>到货 +{formatNumber(arrival.quantity)}</span>
+                        ))
+                      ) : (
+                        <span className="placeholder">无到货</span>
+                      )}
+                    </div>
+                    <div className="supply-week-label">
+                      <span>第 {week.week} 周</span>
+                    </div>
+                    <div className="supply-week-bar" aria-hidden="true">
+                      {week.days.map((day) => (
+                        <span
+                          className={day.status}
+                          key={day.day}
+                          title={`第 ${day.day} 天 ${day.status === "shortage" ? "断货" : "供货正常"}`}
+                        />
+                      ))}
+                    </div>
+                    <small>
+                      第 {formatNumber(week.startDay)}-{formatNumber(week.endDay)} 天
+                    </small>
+                  </div>
+                ))}
+              </div>
             </div>
-            <div className="supply-week-label">
-              <span>第 {week.week} 周</span>
-              <strong>{week.shortageDays > 0 ? `断 ${formatNumber(week.shortageDays)} 天` : "供货正常"}</strong>
-            </div>
-            <div className="supply-week-bar" aria-hidden="true">
-              {week.days.map((day) => (
-                <span
-                  className={day.status}
-                  key={day.day}
-                  title={`第 ${day.day} 天 ${day.status === "shortage" ? "断货" : "供货正常"}`}
-                />
-              ))}
-            </div>
-            <small>
-              第 {formatNumber(week.startDay)}-{formatNumber(week.endDay)} 天
-            </small>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function SkuAiChatPanel({ item, messages, input, sending, onInputChange, onSend, onQuickAsk }) {
@@ -2015,43 +2036,45 @@ function piciShortageWindowSummary(item) {
   let previousHorizon = 0;
   let previousAvailable = 0;
   let previousForecast = 0;
+  let availablePool = 0;
   let totalDays = 0;
   const segments = [];
   const fishboneDays = [];
   const arrivals = [];
+  let activeShortageStart = null;
   let firstStartDay = null;
 
   entries.forEach((entry) => {
     const intervalDays = Math.max(entry.horizon - previousHorizon, 0);
     const intervalForecast = Math.max(entry.forecast - previousForecast, 0);
     const intervalSupply = Math.max(entry.available - previousAvailable, 0);
-    const carriedAvailable = Math.max(previousAvailable - previousForecast, 0);
-    const intervalAvailable = carriedAvailable + intervalSupply;
     const intervalStartDay = previousHorizon + 1;
     const intervalEndDay = entry.horizon;
 
     if (intervalDays > 0) {
       const dailyForecast = intervalForecast / intervalDays;
-      const isShortageInterval = dailyForecast > 0 && intervalForecast > intervalAvailable;
-      const coveredDays = isShortageInterval ? Math.min(intervalDays, Math.floor(intervalAvailable / dailyForecast)) : intervalDays;
-      const shortageDays = intervalDays - coveredDays;
-      const shortageStartDay = intervalStartDay + coveredDays;
-
-      for (let day = intervalStartDay; day <= intervalEndDay; day += 1) {
-        fishboneDays.push({
-          day,
-          status: isShortageInterval && day >= shortageStartDay ? "shortage" : "ok",
-        });
-      }
+      availablePool += intervalSupply;
 
       if (previousHorizon > 0 && intervalSupply > 0) {
         arrivals.push({ day: intervalStartDay, quantity: intervalSupply });
       }
 
-      if (shortageDays > 0) {
-        totalDays += shortageDays;
-        firstStartDay = firstStartDay === null ? shortageStartDay : Math.min(firstStartDay, shortageStartDay);
-        segments.push(formatShortageSegment(shortageStartDay, shortageDays));
+      for (let day = intervalStartDay; day <= intervalEndDay; day += 1) {
+        const isCovered = dailyForecast <= 0 || availablePool >= dailyForecast;
+        fishboneDays.push({ day, status: isCovered ? "ok" : "shortage" });
+
+        if (isCovered) {
+          availablePool = Math.max(availablePool - dailyForecast, 0);
+          if (activeShortageStart !== null) {
+            segments.push(formatShortageSegment(activeShortageStart, day - activeShortageStart));
+            activeShortageStart = null;
+          }
+        } else {
+          totalDays += 1;
+          firstStartDay = firstStartDay === null ? day : Math.min(firstStartDay, day);
+          activeShortageStart = activeShortageStart ?? day;
+          availablePool = 0;
+        }
       }
     }
 
@@ -2059,6 +2082,10 @@ function piciShortageWindowSummary(item) {
     previousAvailable = entry.available;
     previousForecast = entry.forecast;
   });
+  if (activeShortageStart !== null) {
+    const lastDay = fishboneDays[fishboneDays.length - 1]?.day || activeShortageStart;
+    segments.push(formatShortageSegment(activeShortageStart, lastDay - activeShortageStart + 1));
+  }
   return {
     totalDays,
     firstStartDay: firstStartDay ?? item.pici_first_shortage_days ?? 0,

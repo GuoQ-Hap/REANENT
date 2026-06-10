@@ -2004,6 +2004,34 @@ tbody tr:hover {
   min-width: 0;
 }
 
+.supply-fishbone-rows {
+  display: grid;
+  gap: 18px;
+}
+
+.supply-fishbone-row {
+  min-width: 0;
+}
+
+.supply-row-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  color: #a9d5dc;
+}
+
+.supply-row-summary span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.supply-row-summary strong {
+  color: #f1ffff;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 13px;
+}
+
 .supply-week-node {
   min-width: 0;
   padding: 2px 0;
