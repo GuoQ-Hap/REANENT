@@ -1641,8 +1641,16 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   ];
   const maxTotal = Math.max(...totals.map((item) => item.value), 1);
   const width = 680;
-  const height = 268;
-  const margin = { top: 22, right: 28, bottom: 66, left: 54 };
+  const height = 292;
+  const margin = { top: 22, right: 28, bottom: 82, left: 54 };
+  const totalBar = {
+    labelX: margin.left + 4,
+    trackX: margin.left + 122,
+    maxWidth: width - margin.right - margin.left - 142,
+    startY: height - 52,
+    rowGap: 24,
+    height: 14,
+  };
   const xScale = d3
     .scalePoint()
     .domain(data.map((point) => point.week))
@@ -1663,7 +1671,6 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const actualLine = line(data.map((point) => ({ week: point.week, value: point.actual })));
   const organicLine = line(data.map((point) => ({ week: point.week, value: point.organic })));
   const yTicks = yScale.ticks(4);
-  const labelEvery = Math.max(1, Math.ceil(data.length / 4));
   const salesSeries = [
     {
       key: "forecast",
@@ -1697,18 +1704,6 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
         <span className="forecast">预测销量</span>
         <span className="actual">实际销量</span>
         <span className="organic">自然销量预估</span>
-      </div>
-      <div className="forecast-total-bars" aria-label="预测总量和实际总量">
-        {totals.map((item) => (
-          <div className={`forecast-total-row ${item.key}`} key={item.key}>
-            <span className="forecast-total-label">{item.label}</span>
-            <div className="forecast-total-track">
-              <span className="forecast-total-fill" style={{ width: `${Math.max((item.value / maxTotal) * 100, 3)}%` }}>
-                <strong>{formatNumber(item.value)}</strong>
-              </span>
-            </div>
-          </div>
-        ))}
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {yTicks.map((tick) => (
@@ -1753,14 +1748,23 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
             })}
           </React.Fragment>
         ))}
-        {data.map((point, index) =>
-          index % labelEvery === 0 || index === data.length - 1 ? (
-            <text key={point.week} className="x-label" x={xScale(point.week)} y={height - 36} textAnchor="middle">
-              <tspan x={xScale(point.week)}>{point.labelStart || point.label}</tspan>
-              {point.labelEnd && <tspan x={xScale(point.week)} dy="13">至 {point.labelEnd}</tspan>}
-            </text>
-          ) : null
-        )}
+        <g className="forecast-total-svg" aria-label="预测总量和实际总量">
+          {totals.map((item, index) => {
+            const y = totalBar.startY + index * totalBar.rowGap;
+            const barWidth = Math.max((item.value / maxTotal) * totalBar.maxWidth, 28);
+            return (
+              <g className={`forecast-total-svg-row ${item.key}`} key={item.key}>
+                <text x={totalBar.labelX} y={y + 11} textAnchor="start">
+                  {item.label}
+                </text>
+                <rect x={totalBar.trackX} y={y} width={barWidth} height={totalBar.height} rx="4" />
+                <text className="forecast-total-svg-value" x={totalBar.trackX + barWidth - 8} y={y + 11} textAnchor="end">
+                  {formatNumber(item.value)}
+                </text>
+              </g>
+            );
+          })}
+        </g>
       </svg>
       <ForecastAdSignalStrip data={data} />
     </div>
@@ -1911,11 +1915,13 @@ function ForecastAdSignalStrip({ data }) {
         {data.map((point, index) =>
           index % labelEvery === 0 || index === data.length - 1 ? (
             <text key={`ad-label-${point.week}`} className="ad-x-label" x={xScale(point.week)} y={height - 28} textAnchor="middle">
-              <tspan x={xScale(point.week)}>{point.labelStart || point.label}</tspan>
-              {point.labelEnd && <tspan x={xScale(point.week)} dy="13">至 {point.labelEnd}</tspan>}
+              {point.labelStart || point.week}
             </text>
           ) : null
         )}
+        <text className="ad-x-axis-title" x={margin.left - 8} y={height - 28} textAnchor="end">
+          周统计
+        </text>
       </svg>
     </div>
   );
