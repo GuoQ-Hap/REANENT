@@ -97,7 +97,7 @@ class StiDatabaseConfig:
 class StiDatabaseConnector(ConnectorLogMixin):
     """只读连接 STI / dw_leang 数据库。
 
-    当前首期只实现库存快照读取，主表为 ads_lingxing_all_warehouse_new_v1。
+    当前首期只实现库存快照读取，主表为 ads_lingxing_all_warehouse_new。
     """
 
     connector_name = "sti_database"
@@ -135,6 +135,202 @@ class StiDatabaseConnector(ConnectorLogMixin):
             raise LookupError(f"No inventory snapshot found in STI database for {query_scope}.")
         self.log_query_completed("get_inventory_snapshot", len(snapshots))
         return snapshots
+
+    def get_inventory_rows(self, query_spec: QuerySpec) -> list[dict[str, Any]]:
+        """Return whitelisted raw inventory rows for UI-oriented read models."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        self.log_query_started(query_spec.intent, query_spec.material_code)
+        try:
+            rows = self._query_inventory_rows(query_spec)
+        except Exception as exc:
+            self.log_query_failed(query_spec.intent)
+            raise RuntimeError("STI database inventory row query failed.") from exc
+        self.log_query_completed(query_spec.intent, len(rows))
+        return rows
+
+    def get_inventory_export_rows(
+        self,
+        fields: tuple[str, ...],
+        filters: dict[str, Any] | None = None,
+        limit: int = 20000,
+    ) -> list[dict[str, Any]]:
+        """Return raw inventory rows for the controlled Excel export surface."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        safe_fields = [
+            field
+            for field in dict.fromkeys(fields)
+            if field and field.replace("_", "").isalnum() and not field[0].isdigit()
+        ]
+        if not safe_fields:
+            return []
+        spec = QuerySpec.inventory(
+            intent="inventory_monitoring_export",
+            filters={**(filters or {}), "order_by": "risk_then_demand"},
+            limit=limit,
+        )
+        filter_sql, params = _filter_sql(spec)
+        fields_sql = ",\n                ".join(safe_fields)
+        select_sql = f"""
+            SELECT
+                {fields_sql}
+            FROM {ALL_WAREHOUSE_CATALOG.table_name}
+            {filter_sql}
+            {_order_sql(spec)}
+            LIMIT {_bounded_limit(limit, spec)}
+        """
+        self.log_query_started("inventory_monitoring_export")
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(select_sql, params)
+                rows = list(cursor.fetchall())
+        self.log_query_completed("inventory_monitoring_export", len(rows))
+        return rows
+
+    def get_warehouse_inventory_rows(self, country_code: str | None = None, limit: int = 80) -> list[dict[str, Any]]:
+        """Return warehouse-level inventory quantities from domestic/overseas warehouse details."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        sql = f"""
+            SELECT
+                resolved_country_code AS country_code,
+                country_area_name,
+                warehouse_code,
+                warehouse_name,
+                warehouse_display_name,
+                SUM(product_total) AS product_total,
+                SUM(product_valid_num) AS product_valid_num,
+                SUM(product_lock_num) AS product_lock_num,
+                SUM(product_onway) AS product_onway,
+                COUNT(DISTINCT sku) AS sku_count
+            FROM (
+                SELECT
+                    CASE
+                        WHEN COALESCE(w.country_code, '') <> '' THEN UPPER(w.country_code)
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-US%%' OR COALESCE(w.name, '') LIKE '%%美国%%' THEN 'US'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-CA%%' OR COALESCE(w.name, '') LIKE '%%加拿大%%' THEN 'CA'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-MX%%' OR COALESCE(w.name, '') LIKE '%%墨西哥%%' THEN 'MX'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-BR%%' OR COALESCE(w.name, '') LIKE '%%巴西%%' THEN 'BR'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-UK%%' OR COALESCE(w.name, '') LIKE '%%英国%%' THEN 'UK'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-DE%%' OR COALESCE(w.name, '') LIKE '%%德国%%' THEN 'DE'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-JP%%' OR COALESCE(w.name, '') LIKE '%%日本%%' THEN 'JP'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-AU%%' OR COALESCE(w.name, '') LIKE '%%澳%%' THEN 'AU'
+                        WHEN UPPER(COALESCE(w.name, '')) LIKE '%%-CN%%' OR COALESCE(w.name, '') LIKE '%%中国%%' OR COALESCE(w.name, '') LIKE '%%深圳%%' OR COALESCE(w.name, '') LIKE '%%义乌%%' THEN 'CN'
+                        ELSE ''
+                    END AS resolved_country_code,
+                    COALESCE(w.t_country_area_name, '') AS country_area_name,
+                    COALESCE(w.t_warehouse_code, '') AS warehouse_code,
+                    COALESCE(w.t_warehouse_name, '') AS warehouse_name,
+                    COALESCE(NULLIF(w.t_warehouse_name, ''), NULLIF(w.name, ''), CONCAT('WID-', CAST(d.wid AS CHAR))) AS warehouse_display_name,
+                    d.sku,
+                    COALESCE(d.product_total, 0) AS product_total,
+                    COALESCE(d.product_valid_num, 0) AS product_valid_num,
+                    COALESCE(d.product_lock_num, 0) AS product_lock_num,
+                    COALESCE(d.product_onway, 0) AS product_onway
+                FROM (
+                    SELECT *
+                    FROM dwd_lingxing_inventory_details
+                    WHERE date = (SELECT MAX(date) FROM dwd_lingxing_inventory_details)
+                ) d
+                LEFT JOIN (
+                    SELECT *
+                    FROM dwd_lingxing_sc_warehouse
+                    WHERE date = (SELECT MAX(date) FROM dwd_lingxing_sc_warehouse)
+                ) w ON d.wid = w.wid
+                WHERE COALESCE(d.product_total, 0) + COALESCE(d.product_valid_num, 0) + COALESCE(d.product_onway, 0) > 0
+            ) warehouse_rows
+            WHERE (%s = '' OR resolved_country_code = UPPER(%s))
+            GROUP BY resolved_country_code, country_area_name, warehouse_code, warehouse_name, warehouse_display_name
+            ORDER BY product_total DESC
+            LIMIT {_bounded_limit(limit)}
+        """
+        value = (country_code or "").strip().upper()
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (value, value))
+                return list(cursor.fetchall())
+
+    def get_daily_sales_rows(
+        self,
+        sales_start_date: str,
+        sales_end_date: str | None = None,
+        country_code: str | None = None,
+        store_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return SKU sales aggregated by store and country for the selected date range."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        sales_end_date = sales_end_date or sales_start_date
+        sql = """
+            SELECT
+                UPPER(COALESCE(sku, '')) AS sku,
+                UPPER(COALESCE(price_list_seller_sku, '')) AS seller_sku,
+                COALESCE(store_name, '') AS store_name,
+                UPPER(COALESCE(country_code, '')) AS country_code,
+                SUM(COALESCE(volume, 0)) AS daily_sales_volume,
+                SUM(COALESCE(amount, 0)) AS daily_sales_amount,
+                SUM(COALESCE(order_items, 0)) AS daily_order_items
+            FROM ads_lingxing_sc_sales_daily_new
+            WHERE date BETWEEN %s AND %s
+              AND (%s = '' OR UPPER(COALESCE(country_code, '')) = UPPER(%s))
+              AND (%s = '' OR COALESCE(store_name, '') = %s)
+            GROUP BY
+                UPPER(COALESCE(sku, '')),
+                UPPER(COALESCE(price_list_seller_sku, '')),
+                COALESCE(store_name, ''),
+                UPPER(COALESCE(country_code, ''))
+        """
+        country = (country_code or "").strip().upper()
+        store = (store_name or "").strip()
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (sales_start_date, sales_end_date, country, country, store, store))
+                return list(cursor.fetchall())
+
+    def get_pici_shortage_rows(self, store_name: str | None = None, table_name: str = "temp_lingxing_pici_sale") -> list[dict[str, Any]]:
+        """Return batch inventory/forecast gap rows used for shortage investigation."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        allowed_tables = {"temp_lingxing_pici_sale"}
+        if table_name not in allowed_tables:
+            raise ValueError(f"unsupported pici shortage table: {table_name}")
+        sql = f"""
+            SELECT
+                fnsku,
+                store_name,
+                fnsku_inventory_1,
+                chazhi_0_7,
+                chazhi_0_14,
+                chazhi_0_21,
+                chazhi_0_28,
+                chazhi_0_35,
+                chazhi_0_42,
+                chazhi_0_49,
+                chazhi_0_56,
+                chazhi_0_63,
+                chazhi_0_70,
+                chazhi_0_77,
+                chazhi_0_84,
+                chazhi_0_98
+            FROM {table_name}
+            WHERE (%s = '' OR COALESCE(store_name, '') = %s)
+        """
+        store = (store_name or "").strip()
+        with self._connect() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, (store, store))
+                return list(cursor.fetchall())
 
     def record_control_advice(self, material_code: str, advice: list[str]) -> str:
         logger.warning(
@@ -184,7 +380,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
             FROM {ALL_WAREHOUSE_CATALOG.table_name}
             {filter_sql}
             {order_sql}
-            LIMIT {_bounded_limit(spec.limit)}
+        LIMIT {_bounded_limit(spec.limit, spec)}
         """
         with self._connect() as conn:
             with conn.cursor() as cursor:
@@ -209,7 +405,7 @@ class StiDatabaseConnector(ConnectorLogMixin):
             )
             {filter_sql}
             {order_sql}
-            LIMIT {_bounded_limit(spec.limit)}
+            LIMIT {_bounded_limit(spec.limit, spec)}
         """
         upper_codes = [code.upper() for code in normalized]
         params = [*upper_codes, *upper_codes, *upper_codes, *filter_params]
@@ -293,6 +489,13 @@ def _filter_sql(spec: QuerySpec, prefix: str = "WHERE") -> tuple[str, list[Any]]
         clauses.append(f"msku_sales_property IN ({placeholders})")
         params.extend(values)
 
+    for field in ("country_code", "shipments_country", "store_name"):
+        values = _safe_filter_values(filters.get(field), max_values=20)
+        if values:
+            placeholders = ", ".join(["%s"] * len(values))
+            clauses.append(f"{field} IN ({placeholders})")
+            params.extend(values)
+
     if filters.get("risk_only"):
         risk_fields = [f"fnsku_out_of_stock_risk_{index}" for index in range(1, 7)]
         clauses.append(
@@ -329,9 +532,27 @@ def _as_list(value: Any) -> list[str]:
     return [item.strip() for item in values if item and item.strip() in allowed]
 
 
-def _bounded_limit(limit: int) -> int:
+def _safe_filter_values(value: Any, max_values: int = 20) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set)):
+        values = [str(item) for item in value]
+    else:
+        values = [str(value)]
+    clean = []
+    for item in values:
+        text = item.strip()
+        if text and len(text) <= 80:
+            clean.append(text)
+    return list(dict.fromkeys(clean))[:max_values]
+
+
+def _bounded_limit(limit: int, spec: QuerySpec | None = None) -> int:
     try:
         value = int(limit)
     except (TypeError, ValueError):
         value = ALL_WAREHOUSE_CATALOG.default_limit
-    return max(1, min(value, 500))
+    max_limit = 20000 if spec and spec.intent in {"inventory_control_tower", "inventory_monitoring_export"} else 500
+    return max(1, min(value, max_limit))

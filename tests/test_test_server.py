@@ -4,17 +4,40 @@ import os
 import zipfile
 from datetime import date
 from decimal import Decimal
+from unittest.mock import patch
 
 from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticRunResult, AgenticStep
+from pmc_agent.config import AgentConfig, InventoryPolicy
+from pmc_agent.orchestrator import PmcAgent
 from pmc_agent.test_server import LLM_MODULES, SCENARIOS, TEST_TARGETS, _agentic_attachments, _append_attachment_links, _to_jsonable, get_model_options, get_monitored_chat_run, run_chat, run_llm_module, run_scenario, run_test_target, start_monitored_chat
+from pmc_agent.tools import ToolRegistry
+from pmc_agent.tools.inventory import (
+    ControlTowerTool,
+    ExceptionCaseTool,
+    InventoryRiskTool,
+    InventorySnapshotTool,
+    KnowledgeLookupTool,
+    PurchaseVerificationTool,
+    ShipmentVerificationTool,
+    ShortageTraceTool,
+    SimpleChatTool,
+    WeeklyShipmentPlanTool,
+)
+from tests.fake_control_tower import FakeMainRuleConnector
 
 
 class TestServerTests(unittest.TestCase):
     def setUp(self):
         self._old_db_enabled = os.environ.get("STI_DB_ENABLED")
         os.environ["STI_DB_ENABLED"] = "false"
+        self._create_default_patch = patch(
+            "pmc_agent.test_server.PmcAgent.create_default",
+            side_effect=lambda intent_model=None: _fake_agent(intent_model),
+        )
+        self._create_default_patch.start()
 
     def tearDown(self):
+        self._create_default_patch.stop()
         if self._old_db_enabled is None:
             os.environ.pop("STI_DB_ENABLED", None)
         else:
@@ -183,6 +206,28 @@ class TestServerTests(unittest.TestCase):
         self.assertIn("route_node_completed", event_names)
         self.assertIn("final_returned", event_names)
         self.assertIn("A100", status["result"]["reply"])
+
+
+def _fake_agent(intent_model):
+    connector = FakeMainRuleConnector()
+    return PmcAgent(
+        config=AgentConfig(),
+        tools=ToolRegistry(
+            {
+                "inventory_snapshot": InventorySnapshotTool(connector=connector),
+                "simple_chat": SimpleChatTool(),
+                "inventory_risk": InventoryRiskTool(policy=InventoryPolicy(), connector=connector),
+                "control_tower": ControlTowerTool(connector=connector),
+                "shortage_trace": ShortageTraceTool(connector=connector),
+                "shipment_verification": ShipmentVerificationTool(),
+                "purchase_verification": PurchaseVerificationTool(),
+                "weekly_shipment_plan": WeeklyShipmentPlanTool(),
+                "exception_case": ExceptionCaseTool(),
+                "knowledge_lookup": KnowledgeLookupTool(),
+            }
+        ),
+        intent_model=intent_model,
+    )
 
 
 if __name__ == "__main__":

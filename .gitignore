@@ -8,6 +8,7 @@ logs/
 web/generated/
 .idea/
 node_modules/
+frontend/dist/
 output/
 outputs/
 .pytest_cache/

@@ -35,7 +35,7 @@ Source PDF rendered with Poppler `pdftoppm` from:
 
 ## Data Base
 
-- `ads_lingxing_all_warehouse_new_v1`: inventory control tower bottom table.
+- `ads_lingxing_all_warehouse_new`: inventory control tower bottom table.
 - `dim_inventory_forecast_v1`: purchase-side future inventory forecast.
 - `dim_inventory_forecast_v1_fh`: shipment-side future inventory forecast.
 - `ads_lingxing_sc_sales_daily_new`: sales daily report, actual sales, ads, promotion data.

@@ -9,12 +9,14 @@ class SchemaCatalogTests(unittest.TestCase):
     def test_field_pack_expands_identity_and_pack_fields(self):
         fields = ALL_WAREHOUSE_CATALOG.fields_for(FieldPack.PURCHASE_VERIFICATION)
 
+        self.assertEqual(ALL_WAREHOUSE_CATALOG.table_name, "ads_lingxing_all_warehouse_new")
         self.assertIn("sku", fields)
         self.assertIn("fnsku", fields)
         self.assertIn("msku_sales_property", fields)
         self.assertIn("seasonality", fields)
-        self.assertIn("basic_purchase_quantity", fields)
-        self.assertIn("jypurchase_quantity", fields)
+        self.assertIn("procurement_plan_quantity", fields)
+        self.assertNotIn("basic_purchase_quantity", fields)
+        self.assertNotIn("jypurchase_quantity", fields)
 
     def test_inventory_risk_includes_database_risk_flags(self):
         fields = ALL_WAREHOUSE_CATALOG.fields_for(FieldPack.INVENTORY_RISK)

@@ -30,7 +30,7 @@ User / System Trigger
 
 ## Current Integration Status
 
-- Data warehouse: the read-only STI connector can query inventory snapshots from `ads_lingxing_all_warehouse_new_v1`. Additional warehouse, forecast, sales, FBA, and domestic-stock tables are documented for later expansion.
+- Data warehouse: the read-only STI connector can query inventory snapshots from `ads_lingxing_all_warehouse_new`. Additional warehouse, forecast, sales, FBA, and domestic-stock tables are documented for later expansion.
 - Rule Excel files: stocking rules, reorder quantity, carton size, supplier data, and logistics rules are not yet wired into the calculation engine.
 - Business workflows: purchase advice, weekly shipment plans, and exception cases are generated as drafts that require human confirmation. Full PMC, purchase, logistics, and operations approval workflows are still integration work.
 - LLM provider: intent recognition, model routing, failure handling, and model-driven tool orchestration are implemented. Future work should focus on richer tool schemas, more real data sources, and stronger approval boundaries.
@@ -135,7 +135,7 @@ The `--feedback` option turns on a lightweight goal loop. The first iteration ru
 
 ## Database Connector
 
-Set `STI_DB_ENABLED=true` in `.env` to use the read-only STI data warehouse connector. The current implementation reads inventory snapshots from `ads_lingxing_all_warehouse_new_v1`.
+Set `STI_DB_ENABLED=true` in `.env` to use the read-only STI data warehouse connector. The current implementation reads inventory snapshots from `ads_lingxing_all_warehouse_new`.
 
 When the database connector is enabled, query failures and empty results are treated as real failures. In the deterministic agent loop, failures can be passed to the failure-handling model and returned as a `failure_decision` artifact; demo data is used only when the database connector is disabled.
 

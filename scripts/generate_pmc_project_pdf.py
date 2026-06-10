@@ -246,7 +246,7 @@ def page_phase1(c: canvas.Canvas) -> None:
         "数据接入",
         [
             "只读接入领星 ERP、Amazon FBA、国内仓/WMS、采购物流、销售/广告。",
-            "主库为 dw_leang，主查询表 ads_lingxing_all_warehouse_new_v1。",
+            "主库为 dw_leang，主查询表 ads_lingxing_all_warehouse_new。",
             "补充预测表、销售日报、FBA 库存、国内仓库存。",
         ],
         BLUE,
@@ -481,7 +481,7 @@ def page_tables(c: canvas.Canvas) -> None:
     c.setFillColor(NAVY)
     c.drawString(M, 456, "核心表池")
     rows = [
-        ("ads_lingxing_all_warehouse_new_v1", "库存控制塔主宽表，作为月度基准快照和主查询入口"),
+        ("ads_lingxing_all_warehouse_new", "库存控制塔主宽表，作为月度基准快照和主查询入口"),
         ("dim_inventory_forecast_v1", "采购侧未来库存预测，用于缺口测算和采购验证"),
         ("dim_inventory_forecast_v1_fh", "发货侧未来库存预测，用于发货窗口和发货验证"),
         ("ads_lingxing_sc_sales_daily_new", "销售日报，用于真实销量、需求判断和预测偏差核对"),

@@ -5,12 +5,14 @@ from pmc_agent.config import InventoryPolicy
 from pmc_agent.domain import AgentRunResult, ExecutionPlan, PlanStep, TaskRequest, TaskType
 from pmc_agent.response_formatter import build_agent_result_ui, build_agentic_result_ui, format_agent_reply, strip_markdown_tables
 from pmc_agent.tools.inventory import InventoryRiskTool, InventorySnapshotTool
+from tests.fake_control_tower import FakeMainRuleConnector
 
 
 class ResponseFormatterTests(unittest.TestCase):
     def test_reply_contains_meaning_headers_and_calculation_logic(self):
-        snapshots = InventorySnapshotTool().run(material_code="A100")
-        decisions = InventoryRiskTool(policy=InventoryPolicy()).run(snapshots=snapshots)
+        connector = FakeMainRuleConnector()
+        snapshots = InventorySnapshotTool(connector=connector).run(material_code="A100")
+        decisions = InventoryRiskTool(policy=InventoryPolicy(), connector=connector).run(snapshots=snapshots)
         result = AgentRunResult(
             request=TaskRequest(text="检查 A100 是否有缺料风险", material_code="A100"),
             plan=ExecutionPlan(
@@ -25,12 +27,13 @@ class ResponseFormatterTests(unittest.TestCase):
         reply = format_agent_reply(result)
 
         self.assertIn("当前总库存（FBA、海外仓、本地仓等库存合计）", reply)
-        self.assertIn("预计 7 天后库存 = 可用库存 + 在途/计划入库合计 - 未来/近 7 天需求", reply)
+        self.assertIn("预计 7 天后库存 = 可用库存 - 未来/近 7 天需求", reply)
         self.assertIn("**建议动作**", reply)
 
     def test_structured_ui_contains_fixed_tables(self):
-        snapshots = InventorySnapshotTool().run(material_code="A100")
-        decisions = InventoryRiskTool(policy=InventoryPolicy()).run(snapshots=snapshots)
+        connector = FakeMainRuleConnector()
+        snapshots = InventorySnapshotTool(connector=connector).run(material_code="A100")
+        decisions = InventoryRiskTool(policy=InventoryPolicy(), connector=connector).run(snapshots=snapshots)
         result = AgentRunResult(
             request=TaskRequest(text="检查 A100 是否有缺料风险", material_code="A100"),
             plan=ExecutionPlan(task_type=TaskType.INVENTORY_RISK, confidence=0.9, steps=[]),

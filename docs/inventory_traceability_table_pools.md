@@ -8,13 +8,24 @@
 ## 结论
 
 - 主要表池: 8 张
-- 用得到表池: 113 张
-- 可能有用表池: 175 张
-- 首期基本用不到表池: 65 张
+- 用得到表池: 117 张
+- 可能有用表池: 190 张
+- 首期基本用不到表池: 46 张
 
-`ads_lingxing_all_warehouse_new_v1` 是主查询宽表，用户说明其更新逻辑为一月一更；因此它应作为月度基准快照和主入口，不应单独承担实时库存变动、采购在途、发货在途的全量追踪。实时/过程性追踪需要结合 DWD/ODS 明细、预测表、采购订单、发货/物流表。
+`ads_lingxing_all_warehouse_new` 是主查询宽表，用户说明其更新逻辑为一月一更；因此它应作为月度基准快照和主入口，不应单独承担实时库存变动、采购在途、发货在途的全量追踪。实时/过程性追踪需要结合 DWD/ODS 明细、预测表、采购订单、发货/物流表。
 
-注意：两个 schema 文件未完整覆盖真实库中确认存在的 `ads_lingxing_all_warehouse_new_v1`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`，本规划已根据真实库探测强制纳入主要表池。
+注意：两个 schema 文件未完整覆盖真实库中确认存在的 `ads_lingxing_all_warehouse_new`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`，本规划已根据真实库探测强制纳入主要表池。
+
+本次复查补充：日销量、广告流量、产品表现和库存数量/监控都会显著影响库存判断。`ads_lingxing_sc_sales_daily_new` 本身已经包含 `volume`、`order_items`、`promotion_volume`、`clicks`、`spend`、`impressions`、`sessions_total`、`ad_sales_amount`、`afn_fulfillable_quantity`、`stock_up_num` 等销量、广告和库存信号；同时将 ADS SP 广告日报和 MSKU 产品表现表提升到用得到表池，DWD/ODS 广告与产品表现明细作为下钻备用。
+
+重点候选：
+
+| 方向 | 优先表 | 说明 |
+| --- | --- | --- |
+| 日销量/真实需求 | `ads_lingxing_sc_sales_daily_new`、`ads_lingxing_sc_sales_daily`、`ads_lingxing_sc_sales_daily2` | 销量、订单、促销销量、销售额，可核对近 7/30 天真实消耗。 |
+| 日销量预测 | `dim_lingxing_daily_sales_estimates`、`dim_lingxing_sales_estimates_everyday_v1_incr`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh` | 未来需求、采购侧/发货侧库存预测和预测偏差。 |
+| 日广告流量 | `ads_lingxing_sp_asin_reports_incr`、`ads_lingxing_sp_product_ad_reports_incr`、`ads_lingxing_sp_word_reports_incr`、`dwd_lingxing_sc_product_performance_msku` | 曝光、点击、花费、广告订单、广告销量/销售额和转化变化，用于判断广告拉动导致的库存消耗。 |
+| 库存数量/监控 | `stock_monitor_new`、`stock_monitor_tmp`、`dim_lingxing_kucun_num`、`temp_lingxing_kucun_num`、`temp_current_inventory` | 库存数量、库存监控、FNSKU/MSKU 维度库存快照和临时现行口径。 |
 
 ## 主要表池
 
@@ -22,7 +33,7 @@
 
 | 表 | 描述 | 分类 | 放入原因 |
 | --- | --- | --- | --- |
-| `ads_lingxing_all_warehouse_new_v1` | 领星ERP全部仓库/仓储主宽表 v1，真实库已确认存在。 | 库存管理 | 库存全链路溯源主查询宽表；用户说明为一月一更，适合做月度基准快照和主入口。注意它不适合单独承担实时库存变动追踪。 |
+| `ads_lingxing_all_warehouse_new` | 领星ERP全部仓库/仓储主宽表，真实库已确认存在。 | 库存管理 | 库存全链路溯源主查询宽表；用户说明为一月一更，适合做月度基准快照和主入口。注意它不适合单独承担实时库存变动追踪。 |
 | `ads_lingxing_sc_sales_daily_new` | 领星ERP - 销售 - 日度 - (new版本) | 销售分析 | 销售日报；用于真实销量、近 7/30 天需求和预测偏差核对。 |
 | `ads_lingxing_stocking_rules` | 领星ERP - 补货/备货 - 规则 | 库存管理 | ADS 层备货规则；作为规则宽表或 temp 表口径的对照。 |
 | `dim_inventory_forecast_v1` | 采购侧库存预测 v1。 | 库存管理, 数据预测 | 采购侧未来库存预测；用于采购验证、缺口测算和未来库存曲线，真实库已确认存在。 |
@@ -43,6 +54,9 @@
 | `ads_lingxing_flz` | 领星ERP | 其他 | FBA 库存/库存流水 ADS 表。 |
 | `ads_lingxing_sc_sales_daily` | 领星ERP - 销售 - 日度 | 销售分析 | 销售日报旧表，可用于口径回溯。 |
 | `ads_lingxing_sc_sales_daily2` | 领星ERP - 销售 | 销售分析 | 销售日报旧/中间表。 |
+| `ads_lingxing_sp_asin_reports_incr` | 领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量 | 销售分析, 广告投放, 库存影响 | SP 广告 ASIN 日度/增量数据，含点击、花费、广告销售额、订单等需求信号；用于广告变化对销量与库存消耗影响的复核。 |
+| `ads_lingxing_sp_product_ad_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量 | 销售分析, 广告投放, 库存影响 | SP 产品广告日度/增量数据，含曝光、点击、花费、订单、销量/销售额；用于广告流量变化导致的需求波动分析。 |
+| `ads_lingxing_sp_word_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 增量 | 销售分析, 广告投放, 库存影响 | SP 搜索词/关键词广告日度/增量数据，含展示、点击、花费、订单、销量及 1/7/14/30 天归因；用于广告流量和转化变化的库存影响分析。 |
 | `ads_logistics_monitoring` | 物流 | 物流管理 | 物流监控。 |
 | `ads_logistics_monitoring_sj` | 物流 | 物流管理 | 物流监控时间/事件口径。 |
 | `ads_m_firstleg_shipping` | 物流运输 | 物流管理 | 头程发货 ADS。 |
@@ -87,6 +101,7 @@
 | `dwd_lingxing_purchase_order_list_incr` | 领星ERP - 采购 - 订单 - 列表 - 增量 | 销售分析, 采购管理 | 采购订单主表 DWD。 |
 | `dwd_lingxing_purchase_plans_incr` | 领星ERP - 采购 - 增量 | 采购管理 | 采购计划 DWD。 |
 | `dwd_lingxing_purchase_receipt_order_incr` | 领星ERP - 采购 - 订单 - 增量 | 销售分析, 采购管理 | 采购收货 DWD。 |
+| `dwd_lingxing_sc_product_performance_msku` | 领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU) | 销售分析, 库存管理, 广告投放, 产品管理 | MSKU 日度产品表现明细，含销量、订单、FBA 可售/在途、可售天数、Sessions、展示、点击、广告花费和广告销售；用于把流量、销量和库存状态串联复核。 |
 | `dwd_lingxing_sc_warehouse` | 领星ERP - 仓库/仓储 | 库存管理 | 仓库信息 DWD。 |
 | `dwd_lingxing_sta_inbound_plan_detail_incr` | 领星ERP - 入库 - 计划 - 明细 - 增量 | 物流管理 | STA 入库计划明细 DWD。 |
 | `dwd_lingxing_sta_inbound_plan_list_incr` | 领星ERP - 入库 - 计划 - 列表 - 增量 | 物流管理 | STA 入库计划主表 DWD。 |
@@ -153,7 +168,7 @@
 
 ## 可能有用表池
 
-暂不作为首期必查表，但在产品、店铺、退货、利润、预测版本、日历/活动等问题时可能需要。完整清单见 JSON。
+暂不作为首期必查表，但在产品、店铺、广告流量、退货、利润、预测版本、日历/活动等问题时可能需要。完整清单见 JSON。
 
 | 表 | 描述 | 分类 | 放入原因 |
 | --- | --- | --- | --- |
@@ -281,7 +296,7 @@
 
 ## 首期基本用不到表池
 
-主要是广告投放、评论评价、人员组织、目标考核、与库存溯源链路关系弱的临时或分析表。完整清单见 JSON。
+主要是评论评价、人员组织、目标考核、纯广告元数据/交易明细、与库存溯源链路关系弱的临时或分析表。完整清单见 JSON。
 
 | 表 | 描述 | 分类 | 放入原因 |
 | --- | --- | --- | --- |
@@ -291,9 +306,6 @@
 | `ads_lingxing_sc_sales_daily_tmp1` | 领星ERP - 销售 - 日度 | 销售分析 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ads_lingxing_sc_sales_daily_tmp2` | 领星ERP - 销售 - 日度 | 销售分析 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ads_lingxing_search_term_cost` | 领星ERP - 成本 | 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ads_lingxing_sp_asin_reports_incr` | 领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ads_lingxing_sp_product_ad_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ads_lingxing_sp_word_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ads_m_completion_rate` | 完成率 - 汇率/比率 | 目标考核 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ads_m_completion_rate_test` | 完成率 - 汇率/比率 | 目标考核 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ads_sales_target_daily` | 销售 - 目标 - 日度 | 销售分析, 目标考核 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
@@ -301,23 +313,15 @@
 | `dim_lingxing_adv_account` | 领星ERP - 广告 - 账号 | 广告投放, 店铺管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_mws_reviews_incr` | 领星ERP - 增量 | 评论评价 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_newad_portfolios_incr` | 领星ERP - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sb_word_reports_incr` | 领星ERP - SB广告(Sponsored Brands) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_newad_aba_report_incr` | 领星ERP - 报告 - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sc_product_performance` | 领星ERP - 产品 - 业绩/表现 | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sc_product_performance_asin` | 领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号) | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sc_product_performance_msku` | 领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU) | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_profit_report_msku_incr` | 领星ERP - 利润 - 报告 - MSKU(商户SKU) - 增量 | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_profit_report_msku_incr_tmp` | 领星ERP - 利润 - 报告 - MSKU(商户SKU) - 增量 - 临时 | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_profit_report_sku_incr` | 领星ERP - 利润 - 报告 - SKU(库存单位) - 增量 | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_profit_report_store_incr` | 领星ERP - 利润 - 报告 - 店铺 - 增量 | 利润报告, 店铺管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sc_profit_statistics_msku_incr` | 领星ERP - 利润 - 统计/汇总 - MSKU(商户SKU) - 增量 | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sp_ad_groups_incr` | 领星ERP - SP广告(Sponsored Products) - 广告 - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sp_asin_reports_incr` | 领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量 | 广告投放, 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sp_campaigns_incr` | 领星ERP - SP广告(Sponsored Products) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sp_key_word_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sp_product_ad_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `dwd_lingxing_sp_transaction_detail_incr` | 领星ERP - SP广告(Sponsored Products) - 交易 - 明细 - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `dwd_lingxing_sp_word_reports_incr` | 领星ERP - SP广告(Sponsored Products) - 增量 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `feishu_amz_bi_upload` | 飞书 | 其他 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `feishu_multi_platform_bi_upload` | 飞书 | 其他 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `leang_oper_staff_org_offline` | 乐昂(公司) - 员工/人员 | 人员组织 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
@@ -328,23 +332,15 @@
 | `mid_final_result` | mid_final_result | 其他 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_mws_reviews` | 领星ERP | 评论评价 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_newad_portfolios` | 领星ERP | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sb_word_reports` | 领星ERP - SB广告(Sponsored Brands) | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_adv_list` | 领星ERP - 广告 - 列表 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_newad_aba_report` | 领星ERP - 报告 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sc_product_performance` | 领星ERP - 产品 - 业绩/表现 | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sc_product_performance_asin` | 领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号) | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sc_product_performance_msku` | 领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU) | 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_profit_report_msku` | 领星ERP - 利润 - 报告 - MSKU(商户SKU) | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_profit_report_sku` | 领星ERP - 利润 - 报告 - SKU(库存单位) | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_profit_report_store` | 领星ERP - 利润 - 报告 - 店铺 | 利润报告, 店铺管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sc_profit_statistics_msku` | 领星ERP - 利润 - 统计/汇总 - MSKU(商户SKU) | 产品管理, 利润报告 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sp_ad_groups` | 领星ERP - SP广告(Sponsored Products) - 广告 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sp_asin_reports` | 领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) | 广告投放, 产品管理 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sp_campaigns` | 领星ERP - SP广告(Sponsored Products) | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sp_key_word_reports` | 领星ERP - SP广告(Sponsored Products) | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sp_product_ad_reports` | 领星ERP - SP广告(Sponsored Products) - 产品 - 广告 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `ods_lingxing_sp_transaction_detail` | 领星ERP - SP广告(Sponsored Products) - 交易 - 明细 | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
-| `ods_lingxing_sp_word_reports` | 领星ERP - SP广告(Sponsored Products) | 广告投放 | 广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。 |
 | `temp_pici_awd` | 临时 - 亚马逊AWD仓储 | 其他 | 与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。 |
 | `temp_pici_cgzt` | 临时 | 其他 | 与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。 |
 | `temp_pici_dfh` | 临时 | 其他 | 与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。 |
@@ -353,16 +349,18 @@
 
 ## 首期建议接入顺序
 
-1. 主查询宽表：`ads_lingxing_all_warehouse_new_v1`。
+1. 主查询宽表：`ads_lingxing_all_warehouse_new`。
 2. 预测表：`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`。
 3. 库存明细：`dwd_lingxing_fba_warehouse_detail`、`dwd_lingxing_inventory_details`。
 4. 需求来源：`ads_lingxing_sc_sales_daily_new`。
-5. 规则表：`temp_lingxing_stocking_rules`、`ads_lingxing_stocking_rules`。
-6. 过程追踪：采购订单、采购计划、发货计划、FBA shipment、inbound shipment、物流监控、在途发货。
+5. 广告流量/产品表现：`ads_lingxing_sp_asin_reports_incr`、`ads_lingxing_sp_product_ad_reports_incr`、`ads_lingxing_sp_word_reports_incr`、`dwd_lingxing_sc_product_performance_msku`。
+6. 库存数量/监控：`stock_monitor_new`、`stock_monitor_tmp`、`dim_lingxing_kucun_num`、`temp_lingxing_kucun_num`。
+7. 规则表：`temp_lingxing_stocking_rules`、`ads_lingxing_stocking_rules`。
+8. 过程追踪：采购订单、采购计划、发货计划、FBA shipment、inbound shipment、物流监控、在途发货。
 
 ## connector 设计建议
 
 - 首期默认只查 `main` 和 `directly_used`，避免 Agent 在 300 多张表里盲查。
-- `possibly_useful` 只在用户明确问到产品、店铺、退货、利润、活动、日历、预测版本时启用。
+- `possibly_useful` 只在用户明确问到产品、店铺、广告流量、退货、利润、活动、日历、预测版本时启用。
 - `not_needed` 首期禁止自动查询，除非人工把表提升到其他池。
 - 由于主宽表一月一更，涉及“今天库存/最新在途/最新发货”的问题必须落到 DWD/ODS 明细或实时快照表复核。

@@ -18,7 +18,7 @@ FIELD_MEANINGS = {
     "inbound": "接收中、处理中、在途和计划量合计",
     "demand_next_7d": "近 7 天销量或 7 天需求口径",
     "demand_next_30d": "未来预测或近 30 天需求口径",
-    "projected_7d": "按库存、在途和 7 天需求推算的库存余额",
+    "projected_7d": "按当前可用库存和 7 天需求推算的库存余额",
     "days_of_cover": "预计库存可支撑销售的天数",
     "safety_stock": "规则表或宽表给出的安全库存口径",
     "lead_time_days": "供应或物流交付所需天数",
@@ -33,7 +33,7 @@ FIELD_MEANINGS = {
 CALCULATION_LOGIC = {
     "inventory_health": [
         "可用库存 = 当前总库存 - 已分配数量。",
-        "预计 7 天后库存 = 可用库存 + 在途/计划入库合计 - 未来/近 7 天需求。",
+        "预计 7 天后库存 = 可用库存 - 未来/近 7 天需求。",
         "库存可覆盖天数 = max(预计 7 天后库存, 0) / max(未来/近 30 天日均需求, 默认日需求)。",
         "风险等级按覆盖天数判断：<=3 天为严重风险，<=7 天为高风险，<=14 天为中风险，否则为低风险。",
     ],
@@ -250,7 +250,7 @@ def _decision_row(decision: ControlDecision) -> dict[str, Any]:
     demand_7d = _number(evidence.get("demand_next_7d"))
     demand_30d = _number(evidence.get("demand_next_30d"))
     available = None if on_hand is None or allocated is None else on_hand - allocated
-    projected_7d = None if available is None or inbound is None or demand_7d is None else available + inbound - demand_7d
+    projected_7d = None if available is None or demand_7d is None else available - demand_7d
     row = {
         "material_code": decision.material_code,
         "risk_level": _risk_label(_value(decision.risk_level)),

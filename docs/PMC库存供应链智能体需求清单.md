@@ -109,7 +109,7 @@
 
 | 表/数据源 | 优先级 | 用途 |
 | --- | --- | --- |
-| `ads_lingxing_all_warehouse_new_v1` | P0 | 库存控制塔主入口和月度基准快照 |
+| `ads_lingxing_all_warehouse_new` | P0 | 库存控制塔主入口和月度基准快照 |
 | `ads_lingxing_sc_sales_daily_new` | P0 | 销售日报、销量趋势、预测偏差 |
 | `dim_inventory_forecast_v1` | P0 | 采购侧未来库存预测 |
 | `dim_inventory_forecast_v1_fh` | P0 | 发货侧未来库存预测 |
@@ -246,7 +246,7 @@
 
 ## 十、待确认事项
 
-- 是否以 `ads_lingxing_all_warehouse_new_v1` 作为控制塔主入口。
+- 是否以 `ads_lingxing_all_warehouse_new` 作为控制塔主入口。
 - 采购侧和发货侧预测表的字段口径是否已稳定。
 - 当前系统是否已有正式备货规则表，还是先使用 Excel，备货规则表变化规则
 - 采购、发货、物流数据是否能按日刷新。
@@ -254,4 +254,3 @@
 - 首期是否需要导出 Excel，导出格式由谁确认。
 - 首期看板使用哪些角色权限维度。
 - 验收标准和人员
-

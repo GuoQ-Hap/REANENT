@@ -582,11 +582,14 @@ h2 {
 .flow-node.decision::before {
   content: "";
   position: absolute;
-  inset: 18px 60px;
+  top: 50%;
+  left: 50%;
   z-index: 0;
+  width: 112px;
+  height: 112px;
   border: 2px solid #334155;
   background: #fff;
-  transform: rotate(45deg);
+  transform: translate(-50%, -50%) rotate(45deg);
   box-shadow: 0 2px 0 rgba(15, 23, 42, 0.08);
 }
 

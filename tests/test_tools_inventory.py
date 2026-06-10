@@ -1,7 +1,7 @@
 import unittest
 
 from pmc_agent.config import InventoryPolicy
-from pmc_agent.domain import RiskLevel
+from pmc_agent.domain import InventorySnapshot, RiskLevel
 from pmc_agent.tools.inventory import (
     ControlTowerTool,
     ExceptionCaseTool,
@@ -11,6 +11,7 @@ from pmc_agent.tools.inventory import (
     PurchaseVerificationTool,
     WeeklyShipmentPlanTool,
 )
+from tests.fake_control_tower import FakeMainRuleConnector
 
 
 class EmptyConnector:
@@ -24,7 +25,7 @@ class FieldPackConnector:
 
     def get_inventory_snapshot(self, material_code=None, field_pack=None):
         self.field_pack = field_pack
-        return []
+        return [InventorySnapshot(material_code="A100", on_hand=1, allocated=0, inbound=0, demand_next_7d=1, demand_next_30d=1)]
 
 
 class FakeKnowledgeConnector:
@@ -39,11 +40,8 @@ class FakeKnowledgeConnector:
 
 class InventoryToolTests(unittest.TestCase):
     def test_snapshot_tool_warns_for_missing_material(self):
-        with self.assertLogs("pmc_agent.tools.inventory", level="WARNING") as logs:
-            result = InventorySnapshotTool().run(material_code="ZZ999")
-
-        self.assertEqual(result, [])
-        self.assertEqual(logs.records[0].event, "inventory_snapshot_missing")
+        with self.assertRaisesRegex(RuntimeError, "数据获取失败"):
+            InventorySnapshotTool().run(material_code="ZZ999")
 
     def test_snapshot_tool_does_not_fallback_when_connector_fails(self):
         with self.assertRaisesRegex(LookupError, "No inventory snapshot found"):
@@ -57,17 +55,18 @@ class InventoryToolTests(unittest.TestCase):
         self.assertEqual(connector.field_pack, "purchase_verification")
 
     def test_inventory_risk_tool_outputs_decision_and_warning(self):
-        snapshots = InventorySnapshotTool().run(material_code="A100")
+        connector = FakeMainRuleConnector()
+        snapshots = InventorySnapshotTool(connector=connector).run(material_code="A100")
 
         with self.assertLogs("pmc_agent.tools.inventory", level="WARNING") as logs:
-            decisions = InventoryRiskTool(policy=InventoryPolicy()).run(snapshots=snapshots)
+            decisions = InventoryRiskTool(policy=InventoryPolicy(), connector=connector).run(snapshots=snapshots)
 
-        self.assertEqual(decisions[0].risk_level, RiskLevel.CRITICAL)
+        self.assertEqual(decisions[0].risk_level, RiskLevel.HIGH)
         self.assertTrue(decisions[0].recommended_actions)
         self.assertEqual(logs.records[0].event, "inventory_high_risk_detected")
 
     def test_control_tower_and_weekly_plan_emit_artifact_logs(self):
-        signals = ControlTowerTool().run(InventorySnapshotTool().run())
+        signals = ControlTowerTool(connector=FakeMainRuleConnector()).run()
 
         with self.assertLogs("pmc_agent.tools.inventory", level="WARNING") as logs:
             plan = WeeklyShipmentPlanTool().run(signals=signals)
@@ -76,7 +75,7 @@ class InventoryToolTests(unittest.TestCase):
         self.assertEqual(logs.records[0].event, "weekly_plan_manual_confirmation_required")
 
     def test_purchase_verification_requires_manual_confirmation(self):
-        snapshots = InventorySnapshotTool().run(material_code="A100")
+        snapshots = InventorySnapshotTool(connector=FakeMainRuleConnector()).run(material_code="A100")
 
         with self.assertLogs("pmc_agent.tools.inventory", level="WARNING") as logs:
             decisions = PurchaseVerificationTool().run(snapshots=snapshots)
@@ -85,7 +84,7 @@ class InventoryToolTests(unittest.TestCase):
         self.assertEqual(logs.records[0].event, "purchase_manual_confirmation_required")
 
     def test_exception_case_tool_outputs_draft_cases(self):
-        signals = ControlTowerTool().run(InventorySnapshotTool().run(material_code="A100"))
+        signals = ControlTowerTool(connector=FakeMainRuleConnector()).run(material_code="A100")
         cases = ExceptionCaseTool().run(signals=signals)
 
         self.assertEqual(cases[0].status, "draft")

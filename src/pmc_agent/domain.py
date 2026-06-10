@@ -56,7 +56,7 @@ class InventorySnapshot:
 
     @property
     def projected_7d(self) -> float:
-        return self.available + self.inbound - self.demand_next_7d
+        return self.available - self.demand_next_7d
 
 
 @dataclass(frozen=True)

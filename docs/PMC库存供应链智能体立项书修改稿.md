@@ -111,7 +111,7 @@ Agent 编排层可分为以下大模型模块：
 
 | 表 | 用途 |
 | --- | --- |
-| `ads_lingxing_all_warehouse_new_v1` | 库存控制塔主宽表，适合做月度基准快照和主入口 |
+| `ads_lingxing_all_warehouse_new` | 库存控制塔主宽表，适合做月度基准快照和主入口 |
 | `ads_lingxing_sc_sales_daily_new` | 销售日报、真实销量、广告和促销数据 |
 | `ads_lingxing_stocking_rules` | ADS 层备货规则 |
 | `dim_inventory_forecast_v1` | 采购侧未来库存预测 |
@@ -120,7 +120,7 @@ Agent 编排层可分为以下大模型模块：
 | `dwd_lingxing_inventory_details` | 国内仓库存明细 |
 | `temp_lingxing_stocking_rules` | 临时/现行备货规则 |
 
-注意：`ads_lingxing_all_warehouse_new_v1` 更新频率较低，应作为主查询宽表和基准快照，不应单独承担实时库存、采购在途、发货在途追踪。涉及“今天库存”“最新在途”“最新发货”的问题，必须结合 DWD / ODS 明细、预测表和实时快照表复核。
+注意：`ads_lingxing_all_warehouse_new` 更新频率较低，应作为主查询宽表和基准快照，不应单独承担实时库存、采购在途、发货在途追踪。涉及“今天库存”“最新在途”“最新发货”的问题，必须结合 DWD / ODS 明细、预测表和实时快照表复核。
 
 ### 3.6 数据接入层
 

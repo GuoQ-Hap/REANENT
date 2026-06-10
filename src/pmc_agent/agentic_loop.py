@@ -957,7 +957,7 @@ class AgenticPmcLoop:
                 self._emit_action_running(decision.action.value, "调用工具", "正在计算库存风险。")
                 if not snapshots:
                     return {"ok": False, "error": "No snapshots available. Query inventory snapshot first."}
-                decisions = InventoryRiskTool(policy=self.inventory_policy).run(snapshots=snapshots)
+                decisions = InventoryRiskTool(policy=self.inventory_policy, connector=self.db_connector).run(snapshots=snapshots)
                 return {"ok": True, "decisions": [_to_jsonable(item) for item in decisions], "decision_count": len(decisions)}
 
             if decision.action == AgenticAction.KNOWLEDGE_LOOKUP:
@@ -1358,7 +1358,7 @@ def _available_tools() -> list[dict[str, Any]]:
         },
         {
             "name": AgenticAction.QUERY_INVENTORY_SNAPSHOT.value,
-            "description": "Read inventory snapshot from the read-only STI database. Main table: ads_lingxing_all_warehouse_new_v1.",
+            "description": "Read inventory snapshot from the read-only STI database. Main table: ads_lingxing_all_warehouse_new.",
                 "arguments": {
                     "material_code": "required msku/sku/fnsku/ASIN-like code for a single-material user request",
                     "scope": "set to 'portfolio' only when the user explicitly asks for an overall inventory query",
@@ -1525,7 +1525,7 @@ def _redact_sensitive(value: Any) -> Any:
 def _load_data_catalog() -> dict[str, Any]:
     path = ROOT_DIR / "docs" / "inventory_traceability_table_pools.json"
     if not path.exists():
-        return {"main_tables": ["ads_lingxing_all_warehouse_new_v1"]}
+        return {"main_tables": ["ads_lingxing_all_warehouse_new"]}
     data = json.loads(path.read_text(encoding="utf-8"))
     main = data.get("pools", {}).get("main", {})
     return {

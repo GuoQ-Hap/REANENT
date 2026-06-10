@@ -1,10 +1,8 @@
 import json
 import unittest
-from datetime import date
-from decimal import Decimal
 
 from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticPmcLoop, _parse_agentic_decision_response
-from pmc_agent.domain import InventorySnapshot
+from tests.fake_control_tower import FakeMainRuleConnector
 
 
 class FakePlanner:
@@ -31,7 +29,7 @@ class FakePlanner:
         )
 
 
-class FakeDbConnector:
+class FakeDbConnector(FakeMainRuleConnector):
     def __init__(self):
         self.material_codes = []
         self.query_specs = []
@@ -39,17 +37,7 @@ class FakeDbConnector:
     def get_inventory_snapshot(self, material_code=None, field_pack=None, query_spec=None):
         self.material_codes.append(material_code)
         self.query_specs.append(query_spec)
-        return [
-            InventorySnapshot(
-                material_code=material_code or "UNKNOWN",
-                on_hand=10,
-                allocated=2,
-                inbound=0,
-                demand_next_7d=12,
-                demand_next_30d=30,
-                metadata={"decimal_value": Decimal("12.50"), "snapshot_date": date(2026, 5, 22)},
-            )
-        ]
+        return super().get_inventory_snapshot(material_code, field_pack=field_pack, query_spec=query_spec)
 
 
 class AgenticFunctionCallParsingTests(unittest.TestCase):

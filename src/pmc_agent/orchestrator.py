@@ -47,16 +47,15 @@ class PmcAgent:
             intent_model = OpenAIIntentModelClient()
         failure_model = _resolve_failure_model(intent_model)
         db_connector = StiDatabaseConnector()
-        inventory_connector = db_connector if db_connector.config.ready else None
         vector_connector = MilvusVectorConnector()
         knowledge_connector = vector_connector if vector_connector.config.ready else None
         tools = ToolRegistry(
             tools={
-                "inventory_snapshot": InventorySnapshotTool(connector=inventory_connector),
+                "inventory_snapshot": InventorySnapshotTool(connector=db_connector),
                 "simple_chat": SimpleChatTool(),
-                "inventory_risk": InventoryRiskTool(policy=config.inventory_policy),
-                "control_tower": ControlTowerTool(),
-                "shortage_trace": ShortageTraceTool(),
+                "inventory_risk": InventoryRiskTool(policy=config.inventory_policy, connector=db_connector),
+                "control_tower": ControlTowerTool(connector=db_connector),
+                "shortage_trace": ShortageTraceTool(connector=db_connector),
                 "shipment_verification": ShipmentVerificationTool(),
                 "purchase_verification": PurchaseVerificationTool(),
                 "weekly_shipment_plan": WeeklyShipmentPlanTool(),
@@ -121,9 +120,7 @@ class PmcAgent:
                 elif step.tool == "inventory_risk":
                     decisions = self.tools.run(step.tool, snapshots=snapshots)
                 elif step.tool == "control_tower":
-                    if not snapshots:
-                        snapshots = self.tools.run("inventory_snapshot", material_code=request.material_code, field_pack=field_pack)
-                    signals = self.tools.run(step.tool, snapshots=snapshots)
+                    signals = self.tools.run(step.tool, material_code=request.material_code)
                     artifacts["risk_signals"] = signals
                 elif step.tool in {"shortage_trace", "shipment_verification", "purchase_verification"}:
                     if not snapshots:
@@ -137,7 +134,7 @@ class PmcAgent:
                     artifacts["knowledge"] = self.tools.run(step.tool, query=request.text)
             except Exception as exc:
                 state.transition(RunStatus.TOOL_FAILED, "tool_failed", task_type=plan.task_type.value, step=step.name, tool=step.tool)
-                if not self.failure_model:
+                if _is_data_fetch_failure(exc) or not self.failure_model:
                     raise
                 failure_decision = self.failure_model.handle_failure(
                     request=request,
@@ -217,4 +214,8 @@ def _resolve_failure_model(intent_model: IntentModelClient) -> FailureHandlingMo
         return OpenAIIntentModelClient()
     except RuntimeError:
         logger.warning("failure model unavailable", extra=log_extra("failure_model_unavailable"))
-        return None
+    return None
+
+
+def _is_data_fetch_failure(error: Exception) -> bool:
+    return str(error).startswith("数据获取失败")

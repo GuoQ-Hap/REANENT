@@ -2,11 +2,24 @@ import unittest
 import os
 
 from pmc_agent import PmcAgent
-from pmc_agent.config import AgentConfig
+from pmc_agent.config import AgentConfig, InventoryPolicy
 from pmc_agent.domain import TaskType
 from pmc_agent.model import FailureHandlingDecision, IntentAssessment
 from pmc_agent.state import RunStatus
-from pmc_agent.tools import InventoryRiskTool, ToolRegistry
+from pmc_agent.tools import ToolRegistry
+from pmc_agent.tools.inventory import (
+    ControlTowerTool,
+    ExceptionCaseTool,
+    InventoryRiskTool,
+    InventorySnapshotTool,
+    KnowledgeLookupTool,
+    PurchaseVerificationTool,
+    ShipmentVerificationTool,
+    ShortageTraceTool,
+    SimpleChatTool,
+    WeeklyShipmentPlanTool,
+)
+from tests.fake_control_tower import FakeMainRuleConnector
 
 
 class FakeIntentModel:
@@ -47,6 +60,14 @@ class FailingSnapshotTool:
         raise LookupError("No inventory snapshot found in STI database for material_code=A100.")
 
 
+class DataFetchFailingSnapshotTool:
+    name = "inventory_snapshot"
+    description = "data fetch fail"
+
+    def run(self, **kwargs):
+        raise RuntimeError("数据获取失败：库存快照未返回数据。")
+
+
 class PmcAgentTests(unittest.TestCase):
     def setUp(self):
         self._old_db_enabled = os.environ.get("STI_DB_ENABLED")
@@ -59,7 +80,7 @@ class PmcAgentTests(unittest.TestCase):
             os.environ["STI_DB_ENABLED"] = self._old_db_enabled
 
     def test_inventory_risk_request_produces_decision(self):
-        result = PmcAgent.create_default(FakeIntentModel(TaskType.INVENTORY_RISK)).run("检查 A100 是否有缺料风险")
+        result = _fake_agent(FakeIntentModel(TaskType.INVENTORY_RISK)).run("检查 A100 是否有缺料风险")
 
         self.assertEqual(result.plan.task_type, TaskType.INVENTORY_RISK)
         self.assertEqual(result.decisions[0].material_code, "A100")
@@ -69,14 +90,14 @@ class PmcAgentTests(unittest.TestCase):
         self.assertRegex(result.request.metadata["request_id"], r"^\d{8}_\d{6}_\d{6}$")
 
     def test_portfolio_request_handles_missing_material_code(self):
-        result = PmcAgent.create_default(FakeIntentModel(TaskType.INVENTORY_RISK)).run("检查库存风险")
+        result = _fake_agent(FakeIntentModel(TaskType.INVENTORY_RISK)).run("检查库存风险")
 
         self.assertEqual(result.plan.task_type, TaskType.INVENTORY_RISK)
         self.assertGreaterEqual(len(result.decisions), 2)
         self.assertTrue(result.plan.assumptions)
 
     def test_weekly_shipment_plan_returns_artifact(self):
-        result = PmcAgent.create_default(FakeIntentModel(TaskType.WEEKLY_SHIPMENT_PLAN)).run("生成周度发货计划草稿")
+        result = _fake_agent(FakeIntentModel(TaskType.WEEKLY_SHIPMENT_PLAN)).run("生成周度发货计划草稿")
 
         self.assertEqual(result.plan.task_type, TaskType.WEEKLY_SHIPMENT_PLAN)
         self.assertIn("weekly_shipment_plan", result.artifacts)
@@ -99,6 +120,43 @@ class PmcAgentTests(unittest.TestCase):
         self.assertIn("failure_decision", result.artifacts)
         self.assertEqual(result.artifacts["failure_decision"].next_action, "ask_user_for_input")
         self.assertEqual(result.state_history[-1].to_status, RunStatus.COMPLETED)
+
+    def test_data_fetch_failure_bypasses_failure_model(self):
+        agent = PmcAgent(
+            config=AgentConfig(),
+            tools=ToolRegistry(
+                {
+                    "inventory_snapshot": DataFetchFailingSnapshotTool(),
+                    "inventory_risk": InventoryRiskTool(policy=AgentConfig().inventory_policy),
+                }
+            ),
+            intent_model=FakeIntentModel(TaskType.INVENTORY_RISK),
+            failure_model=FakeFailureModel(),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "数据获取失败"):
+            agent.run("检查 A100 是否有缺料风险")
+
+def _fake_agent(intent_model):
+    connector = FakeMainRuleConnector()
+    return PmcAgent(
+        config=AgentConfig(),
+        tools=ToolRegistry(
+            {
+                "inventory_snapshot": InventorySnapshotTool(connector=connector),
+                "simple_chat": SimpleChatTool(),
+                "inventory_risk": InventoryRiskTool(policy=InventoryPolicy(), connector=connector),
+                "control_tower": ControlTowerTool(connector=connector),
+                "shortage_trace": ShortageTraceTool(connector=connector),
+                "shipment_verification": ShipmentVerificationTool(),
+                "purchase_verification": PurchaseVerificationTool(),
+                "weekly_shipment_plan": WeeklyShipmentPlanTool(),
+                "exception_case": ExceptionCaseTool(),
+                "knowledge_lookup": KnowledgeLookupTool(),
+            }
+        ),
+        intent_model=intent_model,
+    )
 
 
 if __name__ == "__main__":

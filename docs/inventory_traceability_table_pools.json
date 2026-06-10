@@ -5,16 +5,17 @@
   ],
   "scope": "PMC 库存全链路溯源表池规划",
   "notes": [
-    "ads_lingxing_all_warehouse_new_v1 为主查询宽表，用户说明更新逻辑为一月一更，适合作为月度基准快照，不适合承载实时变动追踪。",
+    "ads_lingxing_all_warehouse_new 为主查询宽表，用户说明更新逻辑为一月一更，适合作为月度基准快照，不适合承载实时变动追踪。",
     "分类是首期 connector 选表规划，不等于永久弃用；随着问题范围扩大可从 possibly_useful 提升到 directly_used。",
     "directly_used 侧重库存、预测、采购、发货、物流、销售需求、产品/店铺映射。",
-    "真实数据库探测补充：schema 文件未完整覆盖 `ads_lingxing_all_warehouse_new_v1`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`，但这些表已在 dw_leang 中确认存在，并强制纳入主要表池。"
+    "真实数据库探测补充：schema 文件未完整覆盖 `ads_lingxing_all_warehouse_new`、`dim_inventory_forecast_v1`、`dim_inventory_forecast_v1_fh`，但这些表已在 dw_leang 中确认存在，并强制纳入主要表池。",
+    "本次复查补充：日销量、广告流量、产品表现和库存数量/监控会显著影响库存判断；ADS SP 广告日报和 MSKU 产品表现表已提升到 directly_used，DWD/ODS 广告与产品表现明细作为 possibly_useful 下钻备用。"
   ],
   "pool_counts": {
     "main": 8,
-    "directly_used": 113,
-    "possibly_useful": 175,
-    "not_needed": 65
+    "directly_used": 117,
+    "possibly_useful": 190,
+    "not_needed": 46
   },
   "pools": {
     "main": {
@@ -63,14 +64,14 @@
         "description": "临时 - 领星ERP - 补货/备货 - 规则",
         "column_count": 45
       },
-      "ads_lingxing_all_warehouse_new_v1": {
+      "ads_lingxing_all_warehouse_new": {
         "reason": "库存全链路溯源主查询宽表；用户说明为一月一更，适合做月度基准快照和主入口。注意它不适合单独承担实时库存变动追踪。",
         "categories": [
           "库存管理"
         ],
         "layer": "ADS-应用数据层",
-        "description": "领星ERP全部仓库/仓储主宽表 v1，真实库已确认存在。",
-        "column_count": 165
+        "description": "领星ERP全部仓库/仓储主宽表，真实库已确认存在。",
+        "column_count": 156
       },
       "dim_inventory_forecast_v1": {
         "reason": "采购侧未来库存预测；用于采购验证、缺口测算和未来库存曲线，真实库已确认存在。",
@@ -1132,6 +1133,51 @@
         "layer": "业务表",
         "description": "采购",
         "column_count": 7
+      },
+      "ads_lingxing_sp_asin_reports_incr": {
+        "reason": "SP 广告 ASIN 日度/增量数据，含点击、花费、广告销售额、订单等需求信号；用于广告变化对销量与库存消耗影响的复核。",
+        "categories": [
+          "销售分析",
+          "广告投放",
+          "库存影响"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
+        "column_count": 39
+      },
+      "ads_lingxing_sp_product_ad_reports_incr": {
+        "reason": "SP 产品广告日度/增量数据，含曝光、点击、花费、订单、销量/销售额；用于广告流量变化导致的需求波动分析。",
+        "categories": [
+          "销售分析",
+          "广告投放",
+          "库存影响"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
+        "column_count": 26
+      },
+      "ads_lingxing_sp_word_reports_incr": {
+        "reason": "SP 搜索词/关键词广告日度/增量数据，含展示、点击、花费、订单、销量及 1/7/14/30 天归因；用于广告流量和转化变化的库存影响分析。",
+        "categories": [
+          "销售分析",
+          "广告投放",
+          "库存影响"
+        ],
+        "layer": "ADS-应用数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 45
+      },
+      "dwd_lingxing_sc_product_performance_msku": {
+        "reason": "MSKU 日度产品表现明细，含销量、订单、FBA 可售/在途、可售天数、Sessions、展示、点击、广告花费和广告销售；用于把流量、销量和库存状态串联复核。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
+        "column_count": 142
       }
     },
     "possibly_useful": {
@@ -2759,6 +2805,168 @@
         "layer": "TMP-临时表",
         "description": "临时 - 亚马逊FBA物流 - 发货/物流 - 明细",
         "column_count": 20
+      },
+      "dwd_lingxing_sb_word_reports_incr": {
+        "reason": "DWD SB 广告搜索词增量明细，作为品牌广告流量影响分析备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SB广告(Sponsored Brands) - 增量",
+        "column_count": 27
+      },
+      "dwd_lingxing_sc_product_performance": {
+        "reason": "DWD 产品日度表现补充表，可在需要产品维度流量、销量、广告和库存状态联动分析时启用。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现",
+        "column_count": 119
+      },
+      "dwd_lingxing_sc_product_performance_asin": {
+        "reason": "DWD ASIN 日度产品表现补充表，可在 ASIN 粒度检查流量、销量、广告和库存状态时启用。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
+        "column_count": 142
+      },
+      "dwd_lingxing_sp_asin_reports_incr": {
+        "reason": "DWD SP 广告 ASIN 增量明细，作为 ADS 广告流量指标的下钻和口径校验备用。",
+        "categories": [
+          "广告投放",
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
+        "column_count": 17
+      },
+      "dwd_lingxing_sp_key_word_reports_incr": {
+        "reason": "DWD SP 关键词广告增量明细，作为关键词流量、点击、花费、转化下钻备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 40
+      },
+      "dwd_lingxing_sp_product_ad_reports_incr": {
+        "reason": "DWD SP 产品广告增量明细，作为 ADS 产品广告流量指标的下钻和口径校验备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
+        "column_count": 16
+      },
+      "dwd_lingxing_sp_word_reports_incr": {
+        "reason": "DWD SP 搜索词广告增量明细，作为搜索词流量、点击、花费、转化下钻备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "DWD-明细数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
+        "column_count": 41
+      },
+      "ods_lingxing_sb_word_reports": {
+        "reason": "ODS SB 广告搜索词原始表，作为品牌广告流量口径回溯备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SB广告(Sponsored Brands)",
+        "column_count": 28
+      },
+      "ods_lingxing_sc_product_performance": {
+        "reason": "ODS 产品表现原始表，作为 DWD 产品表现口径回溯或字段校验备用。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现",
+        "column_count": 119
+      },
+      "ods_lingxing_sc_product_performance_asin": {
+        "reason": "ODS ASIN 产品表现原始表，作为 ASIN 粒度流量/库存分析的口径回溯备用。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
+        "column_count": 119
+      },
+      "ods_lingxing_sc_product_performance_msku": {
+        "reason": "ODS MSKU 产品表现原始表，作为 MSKU 粒度流量/库存分析的口径回溯备用。",
+        "categories": [
+          "销售分析",
+          "库存管理",
+          "广告投放",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
+        "column_count": 119
+      },
+      "ods_lingxing_sp_asin_reports": {
+        "reason": "ODS SP 广告 ASIN 原始表，作为广告流量口径回溯备用。",
+        "categories": [
+          "广告投放",
+          "销售分析",
+          "产品管理"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号)",
+        "column_count": 18
+      },
+      "ods_lingxing_sp_key_word_reports": {
+        "reason": "ODS SP 关键词广告原始表，作为关键词流量口径回溯备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products)",
+        "column_count": 41
+      },
+      "ods_lingxing_sp_product_ad_reports": {
+        "reason": "ODS SP 产品广告原始表，作为广告流量口径回溯备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告",
+        "column_count": 17
+      },
+      "ods_lingxing_sp_word_reports": {
+        "reason": "ODS SP 搜索词广告原始表，作为搜索词流量口径回溯备用。",
+        "categories": [
+          "广告投放",
+          "销售分析"
+        ],
+        "layer": "ODS-操作数据层",
+        "description": "领星ERP - SP广告(Sponsored Products)",
+        "column_count": 42
       }
     },
     "not_needed": {
@@ -2815,33 +3023,6 @@
         "layer": "ADS-应用数据层",
         "description": "领星ERP - 成本",
         "column_count": 31
-      },
-      "ads_lingxing_sp_asin_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ADS-应用数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
-        "column_count": 39
-      },
-      "ads_lingxing_sp_product_ad_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ADS-应用数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
-        "column_count": 26
-      },
-      "ads_lingxing_sp_word_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ADS-应用数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
-        "column_count": 45
       },
       "ads_m_completion_rate": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
@@ -2908,15 +3089,6 @@
         "description": "领星ERP - 增量",
         "column_count": 10
       },
-      "dwd_lingxing_sb_word_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - SB广告(Sponsored Brands) - 增量",
-        "column_count": 27
-      },
       "dwd_lingxing_sc_newad_aba_report_incr": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
         "categories": [
@@ -2925,33 +3097,6 @@
         "layer": "DWD-明细数据层",
         "description": "领星ERP - 报告 - 增量",
         "column_count": 4
-      },
-      "dwd_lingxing_sc_product_performance": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - 产品 - 业绩/表现",
-        "column_count": 119
-      },
-      "dwd_lingxing_sc_product_performance_asin": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
-        "column_count": 142
-      },
-      "dwd_lingxing_sc_product_performance_msku": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
-        "column_count": 142
       },
       "dwd_lingxing_sc_profit_report_msku_incr": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
@@ -3012,16 +3157,6 @@
         "description": "领星ERP - SP广告(Sponsored Products) - 广告 - 增量",
         "column_count": 10
       },
-      "dwd_lingxing_sp_asin_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放",
-          "产品管理"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号) - 增量",
-        "column_count": 17
-      },
       "dwd_lingxing_sp_campaigns_incr": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
         "categories": [
@@ -3029,24 +3164,6 @@
         ],
         "layer": "DWD-明细数据层",
         "description": "领星ERP - SP广告(Sponsored Products) - 增量",
-        "column_count": 16
-      },
-      "dwd_lingxing_sp_key_word_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
-        "column_count": 40
-      },
-      "dwd_lingxing_sp_product_ad_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告 - 增量",
         "column_count": 16
       },
       "dwd_lingxing_sp_transaction_detail_incr": {
@@ -3057,15 +3174,6 @@
         "layer": "DWD-明细数据层",
         "description": "领星ERP - SP广告(Sponsored Products) - 交易 - 明细 - 增量",
         "column_count": 71
-      },
-      "dwd_lingxing_sp_word_reports_incr": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "DWD-明细数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 增量",
-        "column_count": 41
       },
       "feishu_amz_bi_upload": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
@@ -3163,15 +3271,6 @@
         "description": "领星ERP",
         "column_count": 10
       },
-      "ods_lingxing_sb_word_reports": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - SB广告(Sponsored Brands)",
-        "column_count": 28
-      },
       "ods_lingxing_sc_adv_list": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
         "categories": [
@@ -3189,33 +3288,6 @@
         "layer": "ODS-操作数据层",
         "description": "领星ERP - 报告",
         "column_count": 5
-      },
-      "ods_lingxing_sc_product_performance": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - 产品 - 业绩/表现",
-        "column_count": 119
-      },
-      "ods_lingxing_sc_product_performance_asin": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - 产品 - 业绩/表现 - ASIN(亚马逊产品编号)",
-        "column_count": 119
-      },
-      "ods_lingxing_sc_product_performance_msku": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "产品管理"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - 产品 - 业绩/表现 - MSKU(商户SKU)",
-        "column_count": 119
       },
       "ods_lingxing_sc_profit_report_msku": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
@@ -3266,16 +3338,6 @@
         "description": "领星ERP - SP广告(Sponsored Products) - 广告",
         "column_count": 10
       },
-      "ods_lingxing_sp_asin_reports": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放",
-          "产品管理"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - ASIN(亚马逊产品编号)",
-        "column_count": 18
-      },
       "ods_lingxing_sp_campaigns": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
         "categories": [
@@ -3285,24 +3347,6 @@
         "description": "领星ERP - SP广告(Sponsored Products)",
         "column_count": 16
       },
-      "ods_lingxing_sp_key_word_reports": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - SP广告(Sponsored Products)",
-        "column_count": 41
-      },
-      "ods_lingxing_sp_product_ad_reports": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - SP广告(Sponsored Products) - 产品 - 广告",
-        "column_count": 17
-      },
       "ods_lingxing_sp_transaction_detail": {
         "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
         "categories": [
@@ -3311,15 +3355,6 @@
         "layer": "ODS-操作数据层",
         "description": "领星ERP - SP广告(Sponsored Products) - 交易 - 明细",
         "column_count": 71
-      },
-      "ods_lingxing_sp_word_reports": {
-        "reason": "广告、评价、人员、目标考核或销售绩效类，库存全链路溯源首期基本不需要。",
-        "categories": [
-          "广告投放"
-        ],
-        "layer": "ODS-操作数据层",
-        "description": "领星ERP - SP广告(Sponsored Products)",
-        "column_count": 42
       },
       "temp_pici_awd": {
         "reason": "与库存、采购、发货、物流、销售预测链路关联弱，首期不纳入。",

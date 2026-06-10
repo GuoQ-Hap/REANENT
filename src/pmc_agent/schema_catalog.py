@@ -19,6 +19,7 @@ class FieldPack(str, Enum):
     SHIPMENT_VERIFICATION = "shipment_verification"
     AGING_ANALYSIS = "aging_analysis"
     LOGISTICS_TRACE = "logistics_trace"
+    CONTROL_TOWER = "control_tower"
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,7 @@ class TableFieldCatalog:
 
 
 ALL_WAREHOUSE_CATALOG = TableFieldCatalog(
-    table_name="ads_lingxing_all_warehouse_new_v1",
+    table_name="ads_lingxing_all_warehouse_new",
     identity_fields=(
         "msku",
         "sku",
@@ -138,10 +139,6 @@ ALL_WAREHOUSE_CATALOG = TableFieldCatalog(
             "future_60d_sales",
             "future_90d_sales",
             "safety_stock_sales",
-            "basic_purchase_quantity",
-            "jypurchase_quantity",
-            "start_dates0",
-            "end_dates0",
         ),
         FieldPack.SHIPMENT_VERIFICATION: (
             "afn_fulfillable_quantity",
@@ -157,11 +154,6 @@ ALL_WAREHOUSE_CATALOG = TableFieldCatalog(
             "sale_quantity_30",
             "future_15d_sales",
             "future_30d_sales",
-            "basic_fh_quantity",
-            "jyfahuo_quantity",
-            "fhxiuzhenliang",
-            "start_dates",
-            "end_dates",
             "logistics_model",
             "first_leg_logistics_channel",
         ),
@@ -198,12 +190,52 @@ ALL_WAREHOUSE_CATALOG = TableFieldCatalog(
             "local_wh_product_onway",
             "planned_quantity",
         ),
+        FieldPack.CONTROL_TOWER: (
+            "afn_fulfillable_quantity",
+            "fba_warehouse_quantity",
+            "overseas_warehouse_quantity",
+            "local_warehouse_quantity",
+            "afn_inbound_receiving_quantity",
+            "afn_inbound_working_quantity",
+            "oversease_afn_inbound_shipped_quantity",
+            "local_afn_inbound_shipped_quantity",
+            "overseas_wh_product_onway",
+            "local_wh_product_onway",
+            "planned_quantity",
+            "sale_quantity_7",
+            "sale_quantity_30",
+            "sale_quantity_90",
+            "future_15d_sales",
+            "future_30d_sales",
+            "future_60d_sales",
+            "future_90d_sales",
+            "safety_stock_sales",
+            "fnsku_out_of_stock_risk_1",
+            "fnsku_out_of_stock_risk_2",
+            "fnsku_out_of_stock_risk_3",
+            "fnsku_out_of_stock_risk_4",
+            "fnsku_out_of_stock_risk_5",
+            "fnsku_out_of_stock_risk_6",
+            "inv_age_61_to_90_days",
+            "inv_age_91_to_180_days",
+            "inv_age_181_to_270_days",
+            "inv_age_271_to_330_days",
+            "inv_age_331_to_365_days",
+            "inv_age_365_plus_days",
+            "order_duration",
+            "production_duration",
+            "local_to_FBA_time",
+            "local_to_overseas_warehouse_time",
+            "overseas_to_FBA_time",
+            "logistics_model",
+            "first_leg_logistics_channel",
+        ),
     },
 )
 
 
 TASK_FIELD_PACKS: dict[TaskType, FieldPack] = {
-    TaskType.CONTROL_TOWER: FieldPack.INVENTORY_RISK,
+    TaskType.CONTROL_TOWER: FieldPack.CONTROL_TOWER,
     TaskType.INVENTORY_RISK: FieldPack.INVENTORY_RISK,
     TaskType.SHORTAGE_TRACE: FieldPack.SHORTAGE_TRACE,
     TaskType.SHIPMENT_VERIFICATION: FieldPack.SHIPMENT_VERIFICATION,

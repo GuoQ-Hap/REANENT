@@ -12,30 +12,6 @@ from pmc_agent.schema_catalog import FieldPack
 
 logger = get_logger(__name__)
 
-DEFAULT_MATERIALS = {
-    "A100": Material(code="A100", name="Main board", safety_stock=80, min_order_qty=100, lead_time_days=10),
-    "B200": Material(code="B200", name="Battery pack", safety_stock=120, min_order_qty=200, lead_time_days=14),
-}
-
-DEFAULT_INVENTORY = {
-    "A100": InventorySnapshot(
-        material_code="A100",
-        on_hand=160,
-        allocated=120,
-        inbound=40,
-        demand_next_7d=110,
-        demand_next_30d=360,
-    ),
-    "B200": InventorySnapshot(
-        material_code="B200",
-        on_hand=420,
-        allocated=180,
-        inbound=80,
-        demand_next_7d=90,
-        demand_next_30d=310,
-    ),
-}
-
 
 @dataclass
 class SimpleChatTool:
@@ -56,121 +32,115 @@ class SimpleChatTool:
 
 @dataclass
 class InventorySnapshotTool:
-    """演示数据适配器；生产环境应替换为仓库或数仓连接器。"""
+    """从真实业务系统读取库存快照；缺数据时直接失败。"""
 
     connector: BusinessSystemConnector | None = None
     name: str = "inventory_snapshot"
     description: str = "Return inventory and demand snapshot for a material."
 
     def run(self, material_code: str | None = None, field_pack: FieldPack | str | None = None, **_: Any) -> list[InventorySnapshot]:
-        if self.connector:
-            try:
-                snapshots = self.connector.get_inventory_snapshot(material_code, field_pack=field_pack)
-            except TypeError:
-                snapshots = self.connector.get_inventory_snapshot(material_code)
-            logger.info(
-                "inventory snapshot returned from connector",
-                extra=log_extra("inventory_snapshot_connector_returned", material_code=material_code or "-", result_size=len(snapshots), field_pack=str(field_pack or "-")),
-            )
-            return snapshots
-        if material_code:
-            snapshot = DEFAULT_INVENTORY.get(material_code.upper())
-            if not snapshot:
-                logger.warning("inventory snapshot missing", extra=log_extra("inventory_snapshot_missing", material_code=material_code.upper()))
-                return []
-            logger.info("inventory snapshot returned", extra=log_extra("inventory_snapshot_returned", material_code=material_code.upper(), result_size=1))
-            return [snapshot]
-        snapshots = list(DEFAULT_INVENTORY.values())
-        logger.info("portfolio inventory snapshots returned", extra=log_extra("inventory_snapshot_returned", result_size=len(snapshots)))
+        if not self.connector:
+            raise RuntimeError("数据获取失败：库存数据连接器未配置。")
+        try:
+            snapshots = self.connector.get_inventory_snapshot(material_code, field_pack=field_pack)
+        except TypeError:
+            snapshots = self.connector.get_inventory_snapshot(material_code)
+        if not snapshots:
+            raise LookupError("数据获取失败：库存快照未返回数据。")
+        logger.info(
+            "inventory snapshot returned from connector",
+            extra=log_extra("inventory_snapshot_connector_returned", material_code=material_code or "-", result_size=len(snapshots), field_pack=str(field_pack or "-")),
+        )
         return snapshots
 
 
 @dataclass
 class InventoryRiskTool:
-    """基于标准化库存快照计算库存风险。"""
+    """基于控制塔主规则输出库存风险，禁止使用本地兜底规则。"""
 
     policy: InventoryPolicy
+    connector: Any | None = None
     name: str = "inventory_risk"
     description: str = "Evaluate inventory shortage risk and recommend PMC control actions."
 
     def run(self, snapshots: list[InventorySnapshot], **_: Any) -> list[ControlDecision]:
-        if not snapshots:
-            logger.warning("inventory risk called without snapshots", extra=log_extra("inventory_risk_no_snapshots"))
-            return []
-        decisions = [self._evaluate(snapshot) for snapshot in snapshots]
+        if not self.connector:
+            raise RuntimeError("数据获取失败：库存风险判定缺少控制塔数据连接器。")
+        material_codes = [snapshot.material_code for snapshot in snapshots] if snapshots else [None]
+        decisions = []
+        for material_code in material_codes:
+            decisions.extend(self._evaluate_from_control_tower(material_code))
         logger.info("inventory risk evaluated", extra=log_extra("inventory_risk_evaluated", result_size=len(decisions)))
         return decisions
 
-    def _evaluate(self, snapshot: InventorySnapshot) -> ControlDecision:
-        material = DEFAULT_MATERIALS.get(snapshot.material_code, Material(code=snapshot.material_code, name="Unknown"))
-        # 用 30 天需求作为基准日需求，同时避免除零。
-        daily_demand = max(snapshot.demand_next_30d / 30, self.policy.default_daily_demand)
-        days_of_cover = max(snapshot.projected_7d, 0) / daily_demand
+    def _evaluate_from_control_tower(self, material_code: str | None) -> list[ControlDecision]:
+        from pmc_agent.control_tower import get_control_tower_summary
 
-        if snapshot.projected_7d < 0 or days_of_cover <= self.policy.critical_days_of_cover:
-            level = RiskLevel.CRITICAL
-        elif days_of_cover <= self.policy.high_risk_days_of_cover:
-            level = RiskLevel.HIGH
-        elif days_of_cover <= self.policy.medium_risk_days_of_cover:
-            level = RiskLevel.MEDIUM
-        else:
-            level = RiskLevel.LOW
-
-        actions = _actions_for(level, material, snapshot)
-        if level in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
-            logger.warning(
-                "high inventory risk detected",
-                extra=log_extra("inventory_high_risk_detected", material_code=snapshot.material_code, risk_level=level.value),
+        summary = get_control_tower_summary(material_code=material_code, connector=self.connector)
+        decisions = []
+        for item in summary.items:
+            level = _risk_level_from_text(item.risk_level)
+            if level in {RiskLevel.HIGH, RiskLevel.CRITICAL}:
+                logger.warning(
+                    "high inventory risk detected",
+                    extra=log_extra("inventory_high_risk_detected", material_code=item.material_code, risk_level=level.value),
+                )
+            decisions.append(
+                ControlDecision(
+                    material_code=item.material_code,
+                    risk_level=level,
+                    summary=f"{item.material_code} {item.warning_type}",
+                    recommended_actions=[item.suggested_action],
+                    category="inventory_health",
+                    evidence={
+                        **item.evidence,
+                        "on_hand": item.total_inventory,
+                        "allocated": 0,
+                        "inbound": item.inbound_total,
+                        "demand_next_7d": item.demand_7d,
+                        "demand_next_30d": item.demand_30d,
+                        "projected_7d": item.projected_7d,
+                        "stockout_risk_level": item.stockout_risk_level,
+                        "overstock_risk_level": item.overstock_risk_level,
+                        "pici_first_shortage_days": item.pici_first_shortage_days,
+                        "pici_key_gap": item.pici_key_gap,
+                        "redundancy_sellable_days": item.redundancy_sellable_days,
+                    },
+                )
             )
-        summary = (
-            f"{snapshot.material_code} projected 7-day inventory is {snapshot.projected_7d:.0f} "
-            f"{material.unit}; estimated days of cover is {days_of_cover:.1f}."
-        )
-        return ControlDecision(
-            material_code=snapshot.material_code,
-            risk_level=level,
-            summary=summary,
-            recommended_actions=actions,
-            category="inventory_health",
-            evidence={
-                "on_hand": snapshot.on_hand,
-                "allocated": snapshot.allocated,
-                "inbound": snapshot.inbound,
-                "demand_next_7d": snapshot.demand_next_7d,
-                "demand_next_30d": snapshot.demand_next_30d,
-                "safety_stock": material.safety_stock,
-                "lead_time_days": material.lead_time_days,
-            },
-        )
+        return decisions
 
 
 @dataclass
 class ControlTowerTool:
     """为控制塔看板和下游草稿流程生成风险信号。"""
 
+    connector: Any | None = None
     name: str = "control_tower"
     description: str = "Return PMC control-tower risk signals."
 
-    def run(self, snapshots: list[InventorySnapshot] | None = None, **_: Any) -> list[RiskSignal]:
-        snapshots = snapshots or list(DEFAULT_INVENTORY.values())
+    def run(self, material_code: str | None = None, filters: dict[str, Any] | None = None, **_: Any) -> list[RiskSignal]:
+        from pmc_agent.control_tower import get_control_tower_summary
+
+        summary = get_control_tower_summary(material_code=material_code, filters=filters, connector=self.connector)
         signals: list[RiskSignal] = []
-        for snapshot in snapshots:
-            if snapshot.projected_7d < 0:
+        for item in summary.items:
+            if item.stockout_risk_level != "normal":
                 signals.append(
                     RiskSignal(
                         name="high_risk_shortage",
-                        description=f"{snapshot.material_code} projected 7-day inventory is below zero.",
-                        source="ads_lingxing_all_warehouse_new_v1",
-                        severity=RiskLevel.CRITICAL,
+                        description=f"{item.material_code} 命中断货风险：{item.stockout_warning}",
+                        source="control_tower_main_rule",
+                        severity=_risk_level_from_text(item.stockout_risk_level),
                     )
                 )
-            if snapshot.on_hand > snapshot.demand_next_30d * 1.5:
+            if item.overstock_risk_level != "normal":
                 signals.append(
                     RiskSignal(
                         name="redundant_stock",
-                        description=f"{snapshot.material_code} on-hand stock is high versus 30-day demand.",
-                        source="inventory_health_calculation",
-                        severity=RiskLevel.MEDIUM,
+                        description=f"{item.material_code} 命中冗余风险：{item.overstock_warning}",
+                        source="control_tower_main_rule",
+                        severity=_risk_level_from_text(item.overstock_risk_level),
                     )
                 )
         logger.info("control tower signals generated", extra=log_extra("control_tower_signals_generated", result_size=len(signals)))
@@ -179,34 +149,35 @@ class ControlTowerTool:
 
 @dataclass
 class ShortageTraceTool:
+    connector: Any | None = None
     name: str = "shortage_trace"
     description: str = "Explain shortage causes for a SKU/FNSKU."
 
     def run(self, snapshots: list[InventorySnapshot], **_: Any) -> list[ControlDecision]:
-        if not snapshots:
-            logger.warning("shortage trace called without snapshots", extra=log_extra("shortage_trace_no_snapshots"))
-            return []
+        if not self.connector:
+            raise RuntimeError("数据获取失败：断货追因缺少控制塔数据连接器。")
+        from pmc_agent.control_tower import get_control_tower_summary
+
+        material_codes = [snapshot.material_code for snapshot in snapshots] if snapshots else [None]
         decisions: list[ControlDecision] = []
-        for snapshot in snapshots:
-            causes = [
-                "FBA sellable stock is insufficient against near-term demand.",
-                "Inbound coverage does not close the 7-day demand gap.",
-                "Purchase and shipment windows need review before release.",
-            ]
-            decisions.append(
-                ControlDecision(
-                    material_code=snapshot.material_code,
-                    risk_level=RiskLevel.CRITICAL if snapshot.projected_7d < 0 else RiskLevel.MEDIUM,
-                    summary=f"{snapshot.material_code} shortage trace generated from inventory, demand, inbound, and logistics windows.",
-                    recommended_actions=[
-                        "Check shipment pull-in feasibility.",
-                        "Check purchase replenishment and MOQ/carton constraints.",
-                        "Create an exception case if the shortage cannot be closed in time.",
-                    ],
-                    category="shortage_trace",
-                    evidence={"reason_chain": causes, "projected_7d": snapshot.projected_7d},
+        for material_code in material_codes:
+            summary = get_control_tower_summary(material_code=material_code, filters={"risk_type": "stockout"}, connector=self.connector)
+            for item in summary.items:
+                decisions.append(
+                    ControlDecision(
+                        material_code=item.material_code,
+                        risk_level=_risk_level_from_text(item.stockout_risk_level),
+                        summary=f"{item.material_code} 断货追因：{item.stockout_warning}",
+                        recommended_actions=["核查 chazhi 最早缺口窗口、在途覆盖、最快补货窗口，并由 PMC 分派处理人。"],
+                        category="shortage_trace",
+                        evidence={
+                            "pici_first_shortage_days": item.pici_first_shortage_days,
+                            "pici_min_gap_quantity": item.pici_min_gap_quantity,
+                            "pici_key_gap": item.pici_key_gap,
+                            "pici_gap_values": item.pici_gap_values,
+                        },
+                    )
                 )
-            )
         logger.info("shortage trace generated", extra=log_extra("shortage_trace_generated", result_size=len(decisions)))
         return decisions
 
@@ -251,7 +222,7 @@ class PurchaseVerificationTool:
             return []
         decisions = []
         for snapshot in snapshots:
-            material = DEFAULT_MATERIALS.get(snapshot.material_code, Material(code=snapshot.material_code, name="Unknown"))
+            material = Material(code=snapshot.material_code, name=snapshot.material_code)
             shortage_qty = max(snapshot.demand_next_30d - snapshot.available - snapshot.inbound, 0)
             suggested_qty = max(shortage_qty, material.min_order_qty)
             decisions.append(
@@ -332,7 +303,7 @@ class KnowledgeLookupTool:
                 logger.info("knowledge snippets returned from connector", extra=log_extra("knowledge_lookup_connector_completed", result_size=len(snippets), query_present=bool(query)))
                 return snippets
         snippets = [
-            {"title": "Inventory bottom table fields", "content": "Explain fields from ads_lingxing_all_warehouse_new_v1 and forecast tables."},
+            {"title": "Inventory bottom table fields", "content": "Explain fields from ads_lingxing_all_warehouse_new and forecast tables."},
             {"title": "Shipment verification rules", "content": "Explain base shipment, correction quantity, reference quantity, and delta reasons."},
             {"title": "Purchase verification rules", "content": "Explain MOQ, carton size, combine purchase, demand-too-low, and holiday/stocking rules."},
             {"title": "Exception handling SOP", "content": "High-risk actions require human confirmation and feedback records."},
@@ -341,23 +312,11 @@ class KnowledgeLookupTool:
         return snippets
 
 
-def _actions_for(level: RiskLevel, material: Material, snapshot: InventorySnapshot) -> list[str]:
-    """将计算出的风险等级映射为 PMC 控制动作。"""
-
-    if level == RiskLevel.CRITICAL:
-        return [
-            "Freeze non-urgent allocations and re-check production priority.",
-            "Expedite inbound supply and request confirmed arrival time from supplier.",
-            f"Prepare emergency replenishment at least MOQ {material.min_order_qty:.0f} {material.unit}.",
-        ]
-    if level == RiskLevel.HIGH:
-        return [
-            "Review open purchase orders and pull in delivery where possible.",
-            "Check substitute or transfer options before releasing new production orders.",
-        ]
-    if level == RiskLevel.MEDIUM:
-        return [
-            "Monitor daily consumption and supplier commitment.",
-            "Create replenishment advice if demand forecast is confirmed.",
-        ]
-    return ["No immediate control action required; keep routine monitoring."]
+def _risk_level_from_text(value: str) -> RiskLevel:
+    if value == "high":
+        return RiskLevel.HIGH
+    if value == "medium":
+        return RiskLevel.MEDIUM
+    if value == "critical":
+        return RiskLevel.CRITICAL
+    return RiskLevel.LOW

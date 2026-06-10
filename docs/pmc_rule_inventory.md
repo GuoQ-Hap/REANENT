@@ -30,7 +30,7 @@
 
 | 数据源 | 前端中的用途 |
 | --- | --- |
-| `ads_lingxing_all_warehouse_new_v1` | 主库存宽表，包含库存、需求、销售、时效、采购、发货、风险等字段。 |
+| `ads_lingxing_all_warehouse_new` | 主库存宽表，包含库存、需求、销售、时效、采购、发货、风险等字段。 |
 | `temp_lingxing_stocking_rules` | 发货频率、补货频率、可超卖比例、安全天数、下次交付天数。 |
 | `temp_fnsku_boxing` | 单箱数量和供应商 ID。 |
 | `dim_lingxing_local_inventory_product_info` | 供应商报价、产品名称、材质、供应商代码候选。 |
@@ -214,7 +214,7 @@
 
 | 规则项 | 规则 |
 | --- | --- |
-| 计划来源 | 读取 `ads_lingxing_all_warehouse_new_v1` 全量行；无建议发货量的行也保留，发货列按 0 输出。 |
+| 计划来源 | 读取 `ads_lingxing_all_warehouse_new` 全量行；无建议发货量的行也保留，发货列按 0 输出。 |
 | 计划发货时间 | 使用 `start_dates0`；不使用验证日期兜底。 |
 | 计划发货量 | 使用 `jyfahuo_quantity`。 |
 | 前三周发货日 | 选择日期之后最近的周五，以及后续两个周五。 |

@@ -46,7 +46,7 @@ class MemoryLookupTests(unittest.TestCase):
                         "status": "active",
                         "subject_id": "data_catalog",
                         "summary": "主宽表是月度快照。",
-                        "content": "ads_lingxing_all_warehouse_new_v1 月更。",
+                        "content": "ads_lingxing_all_warehouse_new 月更。",
                     }
                 ]
 
