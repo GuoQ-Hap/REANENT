@@ -131,6 +131,7 @@ class MonthlyForecastReviewWeeklyEstimate:
     ad_spend: float
     ad_sales_amount: float
     ad_order_quantity: float
+    organic_sales: float
     ad_acos: float | None
     difference: float
     variance_ratio: float | None
@@ -160,6 +161,7 @@ class MonthlyForecastReview:
     ad_spend: float
     ad_sales_amount: float
     ad_order_quantity: float
+    organic_sales: float
     ad_acos: float | None
     difference: float
     variance_ratio: float | None
@@ -363,6 +365,7 @@ def get_monthly_forecast_review(
     ad_spend = sum(_number(row.get("ad_spend")) for row in matched_actual_rows)
     ad_sales_amount = sum(_number(row.get("ad_sales_amount")) for row in matched_actual_rows)
     ad_order_quantity = sum(_number(row.get("ad_order_quantity")) for row in matched_actual_rows)
+    organic_sales = actual_sales - ad_order_quantity
     ad_acos = ad_spend / ad_sales_amount if ad_sales_amount else None
     difference = actual_sales - forecast_quantity
     variance_ratio = difference / forecast_quantity if forecast_quantity else None
@@ -389,6 +392,7 @@ def get_monthly_forecast_review(
         ad_spend=round(ad_spend, 2),
         ad_sales_amount=round(ad_sales_amount, 2),
         ad_order_quantity=round(ad_order_quantity, 2),
+        organic_sales=round(organic_sales, 2),
         ad_acos=round(ad_acos, 4) if ad_acos is not None else None,
         difference=round(difference, 2),
         variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,
@@ -405,6 +409,7 @@ def get_monthly_forecast_review(
             f"预测口径使用 {MONTHLY_SALES_ESTIMATE_TABLE}.daily_sales_quantity，取 month=预测版本月 且 date 落在趋势对比区间内的预估，并按周聚合。",
             f"实际销量和广告指标使用 {DAILY_SALES_TABLE}，按趋势对比区间和周聚合。",
             "ACOS = 广告花费 / 广告销售额。",
+            "自然销量估算 = 实际销量 - 广告订单量。",
             "差值 = 实际销量 - 预测销量；比例 = 差值 / 预测销量。",
         ],
         snapshot_rows=[
@@ -1050,6 +1055,7 @@ def _weekly_estimates(
         ad_spend = values["ad_spend"]
         ad_sales_amount = values["ad_sales_amount"]
         ad_order_quantity = values["ad_order_quantity"]
+        organic_sales = actual_sales - ad_order_quantity
         ad_acos = ad_spend / ad_sales_amount if ad_sales_amount else None
         difference = actual_sales - forecast_quantity
         variance_ratio = difference / forecast_quantity if forecast_quantity else None
@@ -1063,6 +1069,7 @@ def _weekly_estimates(
                 ad_spend=round(ad_spend, 2),
                 ad_sales_amount=round(ad_sales_amount, 2),
                 ad_order_quantity=round(ad_order_quantity, 2),
+                organic_sales=round(organic_sales, 2),
                 ad_acos=round(ad_acos, 4) if ad_acos is not None else None,
                 difference=round(difference, 2),
                 variance_ratio=round(variance_ratio, 4) if variance_ratio is not None else None,

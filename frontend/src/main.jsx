@@ -1382,6 +1382,7 @@ function SkuDetailPanel({
                     ["广告花费", formatMoney(forecastReview.ad_spend)],
                     ["广告销售额", formatMoney(forecastReview.ad_sales_amount)],
                     ["广告订单量", formatNumber(forecastReview.ad_order_quantity)],
+                    ["自然销量", formatNumber(forecastReview.organic_sales)],
                     ["ACOS", formatRatioPercent(forecastReview.ad_acos)],
                     ["总差值", formatSignedNumber(forecastReview.difference)],
                     ["差值比例", formatPercent(forecastReview.variance_percent)],
@@ -1403,7 +1404,7 @@ function SkuDetailPanel({
                           <span>{week.week}</span>
                           <strong>{formatNumber(week.actual_sales)} / {formatNumber(week.forecast_quantity)}</strong>
                           <small>{week.week_start_date} 至 {week.week_end_date} · {formatSignedNumber(week.difference)} · {formatPercent(week.variance_percent)}</small>
-                          <small>广告 {formatMoney(week.ad_spend)} · ACOS {formatRatioPercent(week.ad_acos)}</small>
+                          <small>自然 {formatNumber(week.organic_sales)} · 广告 {formatMoney(week.ad_spend)} · ACOS {formatRatioPercent(week.ad_acos)}</small>
                         </div>
                       ))}
                     </div>
@@ -1553,6 +1554,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     label: formatChartDateRange(point.week_start_date, point.week_end_date) || point.week,
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
+    organic: Number(point.organic_sales || 0),
     adSpend: Number(point.ad_spend || 0),
   }));
   if (!data.length) return null;
@@ -1570,7 +1572,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     .domain(data.map((point) => point.week))
     .range([margin.left, width - margin.right])
     .padding(0.5);
-  const maxValue = d3.max(data, (point) => Math.max(point.forecast, point.actual)) || 1;
+  const maxValue = d3.max(data, (point) => Math.max(point.forecast, point.actual, point.organic)) || 1;
   const yScale = d3
     .scaleLinear()
     .domain([0, maxValue * 1.15])
@@ -1594,6 +1596,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     .curve(d3.curveMonotoneX);
   const forecastLine = line(data.map((point) => ({ week: point.week, value: point.forecast })));
   const actualLine = line(data.map((point) => ({ week: point.week, value: point.actual })));
+  const organicLine = line(data.map((point) => ({ week: point.week, value: point.organic })));
   const adSpendLine = adLine(data.map((point) => ({ week: point.week, value: point.adSpend })));
   const yTicks = yScale.ticks(4);
   const adTicks = adScale.ticks(4);
@@ -1604,6 +1607,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
       <div className="forecast-chart-legend">
         <span className="forecast">预测</span>
         <span className="actual">实际</span>
+        <span className="organic">自然</span>
         <span className="ad-spend">广告花费</span>
       </div>
       <div className="forecast-total-bars" aria-label="预测总量和实际总量">
@@ -1634,11 +1638,13 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
         ))}
         <path className="forecast-line" d={forecastLine || ""} />
         <path className="actual-line" d={actualLine || ""} />
+        <path className="organic-line" d={organicLine || ""} />
         <path className="ad-spend-line" d={adSpendLine || ""} />
         {data.map((point) => (
           <React.Fragment key={point.week}>
             <circle className="forecast-dot" cx={xScale(point.week)} cy={yScale(point.forecast)} r="4" />
             <circle className="actual-dot" cx={xScale(point.week)} cy={yScale(point.actual)} r="4" />
+            <circle className="organic-dot" cx={xScale(point.week)} cy={yScale(point.organic)} r="4" />
             <circle className="ad-spend-dot" cx={xScale(point.week)} cy={adScale(point.adSpend)} r="4" />
           </React.Fragment>
         ))}
