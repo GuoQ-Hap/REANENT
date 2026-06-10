@@ -1592,8 +1592,8 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   return (
     <div className="forecast-chart" aria-label="周度预测和实际销量折线图">
       <div className="forecast-chart-legend">
-        <span className="forecast">预测</span>
-        <span className="actual">实际</span>
+        <span className="forecast">预测销量</span>
+        <span className="actual">实际销量</span>
         <span className="organic">自然销量预估</span>
       </div>
       <div className="forecast-total-bars" aria-label="预测总量和实际总量">
