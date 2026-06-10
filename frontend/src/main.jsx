@@ -1619,6 +1619,7 @@ function HandlingRecordsPanel({ records, input, onInputChange, onAdd }) {
 }
 
 function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
+  const [activeSalesPoint, setActiveSalesPoint] = useState(null);
   const data = (points || []).map((point) => ({
     week: point.week,
     label: formatFullDateRange(point.week_start_date, point.week_end_date) || point.week,
@@ -1627,6 +1628,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
     forecast: Number(point.forecast_quantity || 0),
     actual: Number(point.actual_sales || 0),
     organic: Number(point.organic_sales || 0),
+    adOrders: Number(point.ad_order_quantity || 0),
     adSpend: Number(point.ad_spend || 0),
     adSales: Number(point.ad_sales_amount || 0),
     adAcos: point.ad_acos === null || point.ad_acos === undefined ? null : Number(point.ad_acos),
@@ -1662,6 +1664,32 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const organicLine = line(data.map((point) => ({ week: point.week, value: point.organic })));
   const yTicks = yScale.ticks(4);
   const labelEvery = Math.max(1, Math.ceil(data.length / 4));
+  const salesSeries = [
+    {
+      key: "forecast",
+      dotClass: "forecast-dot",
+      label: "预测销量",
+      value: (point) => point.forecast,
+      rule: (point) => [`预测销量 = daily_sales_quantity 按周求和`, `本周预测销量 = ${formatNumber(point.forecast)}`],
+    },
+    {
+      key: "actual",
+      dotClass: "actual-dot",
+      label: "实际销量",
+      value: (point) => point.actual,
+      rule: (point) => [`实际销量 = volume 按周求和`, `本周实际销量 = ${formatNumber(point.actual)}`],
+    },
+    {
+      key: "organic",
+      dotClass: "organic-dot",
+      label: "自然销量预估",
+      value: (point) => point.organic,
+      rule: (point) => [
+        `自然销量预估 = 实际销量 - 广告订单量`,
+        `${formatNumber(point.actual)} - ${formatNumber(point.adOrders)} = ${formatNumber(point.organic)}`,
+      ],
+    },
+  ];
 
   return (
     <div className="forecast-chart" aria-label="周度预测和实际销量折线图">
@@ -1694,11 +1722,35 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
         <path className="forecast-line" d={forecastLine || ""} />
         <path className="actual-line" d={actualLine || ""} />
         <path className="organic-line" d={organicLine || ""} />
+        {activeSalesPoint && <ForecastSvgTooltip point={activeSalesPoint} width={width} height={height} />}
         {data.map((point) => (
           <React.Fragment key={point.week}>
-            <circle className="forecast-dot" cx={xScale(point.week)} cy={yScale(point.forecast)} r="4" />
-            <circle className="actual-dot" cx={xScale(point.week)} cy={yScale(point.actual)} r="4" />
-            <circle className="organic-dot" cx={xScale(point.week)} cy={yScale(point.organic)} r="4" />
+            {salesSeries.map((series) => {
+              const value = series.value(point);
+              const x = xScale(point.week) || margin.left;
+              const y = yScale(value);
+              const isActive = activeSalesPoint?.id === `${point.week}-${series.key}`;
+              return (
+                <circle
+                  className={`${series.dotClass} ${isActive ? "active" : ""}`}
+                  cx={x}
+                  cy={y}
+                  key={series.key}
+                  onMouseEnter={() =>
+                    setActiveSalesPoint({
+                      id: `${point.week}-${series.key}`,
+                      x,
+                      y,
+                      label: point.label,
+                      title: series.label,
+                      lines: series.rule(point),
+                    })
+                  }
+                  onMouseLeave={() => setActiveSalesPoint(null)}
+                  r={isActive ? "6" : "4"}
+                />
+              );
+            })}
           </React.Fragment>
         ))}
         {data.map((point, index) =>
@@ -1715,7 +1767,35 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   );
 }
 
+function ForecastSvgTooltip({ point, width, height }) {
+  const boxWidth = 236;
+  const lineHeight = 15;
+  const boxHeight = 38 + point.lines.length * lineHeight;
+  const x = point.x > width - boxWidth - 18 ? point.x - boxWidth - 12 : point.x + 12;
+  const y = Math.max(10, Math.min(point.y - boxHeight - 12, height - boxHeight - 10));
+
+  return (
+    <g className="forecast-svg-tooltip" pointerEvents="none">
+      <line className="hover-guide" x1={point.x} x2={point.x} y1="18" y2={height - 48} />
+      <circle className="hover-ring" cx={point.x} cy={point.y} r="9" />
+      <g transform={`translate(${x}, ${y})`}>
+        <rect width={boxWidth} height={boxHeight} rx="6" />
+        <text x="10" y="18">
+          <tspan className="tooltip-title">{point.title}</tspan>
+          <tspan x="10" dy="16">{point.label}</tspan>
+          {point.lines.map((line, index) => (
+            <tspan x="10" dy={lineHeight} key={`${line}-${index}`}>
+              {line}
+            </tspan>
+          ))}
+        </text>
+      </g>
+    </g>
+  );
+}
+
 function ForecastAdSignalStrip({ data }) {
+  const [activeAdPoint, setActiveAdPoint] = useState(null);
   const width = 680;
   const height = 168;
   const margin = { top: 18, right: 28, bottom: 48, left: 54 };
@@ -1750,6 +1830,27 @@ function ForecastAdSignalStrip({ data }) {
   const spendTicks = spendScale.ticks(3);
   const acosTicks = acosScale.ticks(3);
   const labelEvery = Math.max(1, Math.ceil(data.length / 4));
+  const adSeries = [
+    {
+      key: "spend",
+      dotClass: "ad-spend-dot",
+      label: "广告花费",
+      value: (point) => point.adSpend,
+      y: (point) => spendScale(point.adSpend),
+      rule: (point) => [`广告花费 = spend 按周求和`, `本周广告花费 = ${formatMoney(point.adSpend)}`],
+    },
+    {
+      key: "acos",
+      dotClass: "ad-acos-dot",
+      label: "ACOS",
+      value: (point) => point.adAcos,
+      y: (point) => acosScale(point.adAcos || 0),
+      rule: (point) => [
+        `ACOS = 广告花费 / 广告销售额`,
+        `${formatMoney(point.adSpend)} / ${formatMoney(point.adSales)} = ${formatRatioPercent(point.adAcos)}`,
+      ],
+    },
+  ];
 
   return (
     <div className="forecast-ad-strip" aria-label="周度广告参考指标">
@@ -1776,16 +1877,35 @@ function ForecastAdSignalStrip({ data }) {
         ))}
         <path className="ad-spend-line" d={spendLine || ""} />
         <path className="ad-acos-line" d={acosLine || ""} />
+        {activeAdPoint && <ForecastSvgTooltip point={activeAdPoint} width={width} height={height} />}
         {data.map((point) => (
           <React.Fragment key={`ad-point-${point.week}`}>
-            <circle className="ad-spend-dot" cx={xScale(point.week)} cy={spendScale(point.adSpend)} r="3.5">
-              <title>{`${point.label} · 广告花费 ${formatMoney(point.adSpend)} · 广告销售额 ${formatMoney(point.adSales)}`}</title>
-            </circle>
-            {point.adAcos !== null && (
-              <circle className="ad-acos-dot" cx={xScale(point.week)} cy={acosScale(point.adAcos)} r="3.5">
-                <title>{`${point.label} · ACOS ${formatRatioPercent(point.adAcos)} · 广告花费 ${formatMoney(point.adSpend)} / 广告销售额 ${formatMoney(point.adSales)}`}</title>
-              </circle>
-            )}
+            {adSeries.map((series) => {
+              if (series.value(point) === null) return null;
+              const x = xScale(point.week) || margin.left;
+              const y = series.y(point);
+              const isActive = activeAdPoint?.id === `${point.week}-${series.key}`;
+              return (
+                <circle
+                  className={`${series.dotClass} ${isActive ? "active" : ""}`}
+                  cx={x}
+                  cy={y}
+                  key={series.key}
+                  onMouseEnter={() =>
+                    setActiveAdPoint({
+                      id: `${point.week}-${series.key}`,
+                      x,
+                      y,
+                      label: point.label,
+                      title: series.label,
+                      lines: series.rule(point),
+                    })
+                  }
+                  onMouseLeave={() => setActiveAdPoint(null)}
+                  r={isActive ? "5.5" : "3.5"}
+                />
+              );
+            })}
           </React.Fragment>
         ))}
         {data.map((point, index) =>

@@ -2390,18 +2390,60 @@ tbody tr:hover {
   fill: #ffd36e;
   stroke: #041219;
   stroke-width: 1.5;
+  cursor: pointer;
 }
 
 .forecast-chart .actual-dot {
   fill: #64e7ff;
   stroke: #041219;
   stroke-width: 1.5;
+  cursor: pointer;
 }
 
 .forecast-chart .organic-dot {
   fill: #ff9f6e;
   stroke: #041219;
   stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.forecast-chart .forecast-dot.active,
+.forecast-chart .actual-dot.active,
+.forecast-chart .organic-dot.active,
+.forecast-ad-strip .ad-spend-dot.active,
+.forecast-ad-strip .ad-acos-dot.active {
+  stroke: #f1ffff;
+  stroke-width: 2.4;
+  filter: drop-shadow(0 0 5px rgba(241, 255, 255, 0.55));
+}
+
+.forecast-svg-tooltip .hover-guide {
+  stroke: rgba(241, 255, 255, 0.26);
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.forecast-svg-tooltip .hover-ring {
+  fill: rgba(241, 255, 255, 0.08);
+  stroke: rgba(241, 255, 255, 0.7);
+  stroke-width: 1.4;
+}
+
+.forecast-svg-tooltip rect {
+  fill: rgba(2, 20, 28, 0.96);
+  stroke: rgba(100, 231, 255, 0.34);
+  stroke-width: 1;
+}
+
+.forecast-svg-tooltip text {
+  fill: #b9e2e8;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 10px;
+}
+
+.forecast-svg-tooltip .tooltip-title {
+  fill: #f1ffff;
+  font-weight: 900;
 }
 
 .forecast-ad-strip {
@@ -2508,12 +2550,14 @@ tbody tr:hover {
   fill: #7ee28b;
   stroke: #041219;
   stroke-width: 1.3;
+  cursor: pointer;
 }
 
 .forecast-ad-strip .ad-acos-dot {
   fill: #b5a6ff;
   stroke: #041219;
   stroke-width: 1.3;
+  cursor: pointer;
 }
 
 .weekly-estimate-list {
