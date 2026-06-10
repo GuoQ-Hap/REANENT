@@ -1403,7 +1403,7 @@ function SkuDetailPanel({
                 <p>{lastItem(forecastReview.notes) || "差值 = 实际销量 - 预测销量；比例 = 差值 / 预测销量。"}</p>
               </div>
             ) : (
-              <p className="empty-detail">点击手动复盘后，系统会用当前月份 -2 的预测版本月，从该月最后快照取值日到昨天按周对比预测销量和实际销量。</p>
+              <p className="empty-detail">点击手动复盘后，系统会用当前月份 -2 的预测版本月，从该月最后快照取值日的下一周到当前日期的上一周，按完整周对比预测销量和实际销量。</p>
             )}
           </DetailSection>
 

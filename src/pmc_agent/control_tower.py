@@ -307,7 +307,7 @@ def get_monthly_forecast_review(
         raise RuntimeError("数据获取失败：STI 数据库未启用或连接信息不完整。")
     target_start, target_end = _target_month_window(as_of_date=as_of_date, month_offset=month_offset)
     trigger_date = _as_date(as_of_date) or date.today()
-    review_end = trigger_date - timedelta(days=1)
+    review_end = _week_start(trigger_date) - timedelta(days=1)
     codes = _unique_text([_text(material_code), _text(msku), _text(fnsku)])
     if not codes:
         raise ValueError("material_code、msku、fnsku 至少需要一个。")
@@ -324,7 +324,7 @@ def get_monthly_forecast_review(
         raise RuntimeError("数据获取失败：月度库存监控备份表读取失败。") from exc
     snapshot_start = max((_as_date(row.get("date")) for row in snapshot_rows if _as_date(row.get("date"))), default=None)
     snapshot_date = snapshot_start.isoformat() if snapshot_start else ""
-    review_start = snapshot_start or target_start
+    review_start = _next_week_start(snapshot_start or target_start)
     if review_end < review_start:
         review_end = review_start
     try:
@@ -384,7 +384,7 @@ def get_monthly_forecast_review(
         actual_row_count=len(matched_actual_rows),
         notes=[
             f"默认按运行日月份 -{month_offset} 取预测版本月；例如 6 月运行取 4 月最后一张备份。",
-            "趋势对比区间从预测版本月最后一张备份的取值日期开始，截止到触发当天的前一天。",
+            "趋势对比区间从预测版本月最后一张备份取值日期的下一周开始，截止到触发日所在周的上一周。",
             f"{MONTHLY_FORECAST_REVIEW_TABLE} 先取目标月份内全表最大 date，作为该月最后一次库存监控底表备份快照。",
             f"预测口径使用 {MONTHLY_SALES_ESTIMATE_TABLE}.daily_sales_quantity，取 month=预测版本月 且 date 落在趋势对比区间内的预估，并按周聚合。",
             f"实际销量使用 {DAILY_SALES_TABLE}.volume，按趋势对比区间和周聚合。",
@@ -1091,6 +1091,14 @@ def _target_month_window(as_of_date: str | date | None = None, month_offset: int
     as_of = _as_date(as_of_date) or date.today()
     month_index = as_of.year * 12 + (as_of.month - 1) - offset
     return _month_window(month_index)
+
+
+def _week_start(value: date) -> date:
+    return value - timedelta(days=value.weekday())
+
+
+def _next_week_start(value: date) -> date:
+    return _week_start(value) + timedelta(days=7)
 
 
 def _next_month_window(value: date) -> tuple[date, date]:
