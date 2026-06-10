@@ -306,10 +306,8 @@ def get_monthly_forecast_review(
     if not connector.config.ready:
         raise RuntimeError("数据获取失败：STI 数据库未启用或连接信息不完整。")
     target_start, target_end = _target_month_window(as_of_date=as_of_date, month_offset=month_offset)
-    review_start = target_start
-    review_end = _as_date(as_of_date) or date.today()
-    if review_end < review_start:
-        review_end = review_start
+    trigger_date = _as_date(as_of_date) or date.today()
+    review_end = trigger_date - timedelta(days=1)
     codes = _unique_text([_text(material_code), _text(msku), _text(fnsku)])
     if not codes:
         raise ValueError("material_code、msku、fnsku 至少需要一个。")
@@ -324,6 +322,11 @@ def get_monthly_forecast_review(
         )
     except Exception as exc:
         raise RuntimeError("数据获取失败：月度库存监控备份表读取失败。") from exc
+    snapshot_start = max((_as_date(row.get("date")) for row in snapshot_rows if _as_date(row.get("date"))), default=None)
+    snapshot_date = snapshot_start.isoformat() if snapshot_start else ""
+    review_start = snapshot_start or target_start
+    if review_end < review_start:
+        review_end = review_start
     try:
         actual_rows = connector.get_daily_sales_detail_rows(
             review_start.isoformat(),
@@ -351,7 +354,6 @@ def get_monthly_forecast_review(
     actual_sales = sum(_number(row.get("daily_sales_volume")) for row in matched_actual_rows)
     difference = actual_sales - forecast_quantity
     variance_ratio = difference / forecast_quantity if forecast_quantity else None
-    snapshot_date = max((_sales_stat_date(row.get("date")) for row in snapshot_rows), default="")
     result_type, result_label = _forecast_review_result(difference, forecast_quantity, actual_sales)
 
     return MonthlyForecastReview(
@@ -382,7 +384,7 @@ def get_monthly_forecast_review(
         actual_row_count=len(matched_actual_rows),
         notes=[
             f"默认按运行日月份 -{month_offset} 取预测版本月；例如 6 月运行取 4 月最后一张备份。",
-            "趋势对比区间从预测版本月月初开始，截止到触发当天。",
+            "趋势对比区间从预测版本月最后一张备份的取值日期开始，截止到触发当天的前一天。",
             f"{MONTHLY_FORECAST_REVIEW_TABLE} 先取目标月份内全表最大 date，作为该月最后一次库存监控底表备份快照。",
             f"预测口径使用 {MONTHLY_SALES_ESTIMATE_TABLE}.daily_sales_quantity，取 month=预测版本月 且 date 落在趋势对比区间内的预估，并按周聚合。",
             f"实际销量使用 {DAILY_SALES_TABLE}.volume，按趋势对比区间和周聚合。",

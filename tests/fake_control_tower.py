@@ -54,6 +54,7 @@ class FakeMainRuleConnector:
         sales_end_date = sales_end_date or sales_start_date
         codes = {code.upper() for code in material_codes or []}
         rows = [
+            _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-11", 12),
             _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-01", 33.6),
             _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-08", 42),
             _actual_sales_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", "2026-04-15", 50.4),
@@ -103,7 +104,7 @@ class FakeMainRuleConnector:
                 "shipments_country": "US",
                 "future_30d_sales": 300,
                 "sale_quantity_30": 280,
-                "date": target_start_date,
+                "date": "2026-04-11",
             },
             {
                 "sku": "B200",
@@ -116,7 +117,7 @@ class FakeMainRuleConnector:
                 "shipments_country": "US",
                 "future_30d_sales": 90,
                 "sale_quantity_30": 80,
-                "date": target_start_date,
+                "date": "2026-04-11",
             },
         ]
         rows = [
@@ -143,6 +144,7 @@ class FakeMainRuleConnector:
     ):
         codes = {code.upper() for code in material_codes}
         rows = [
+            _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W15", "2026-04-11", 10),
             _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W14", "2026-04-01", 28),
             _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W15", "2026-04-08", 35),
             _estimate_row("A100", "A100-US-BLK", "X001A100", "Amazon US", "US", target_month, "2026W16", "2026-04-15", 42),
