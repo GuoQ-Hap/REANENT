@@ -1388,7 +1388,11 @@ function SkuDetailPanel({
                 />
                 {forecastReview.weekly_estimates?.length > 0 && (
                   <>
-                    <ForecastReviewChart points={forecastReview.weekly_estimates} />
+                    <ForecastReviewChart
+                      points={forecastReview.weekly_estimates}
+                      forecastTotal={forecastReview.forecast_quantity}
+                      actualTotal={forecastReview.actual_sales}
+                    />
                     <div className="weekly-estimate-list">
                       {forecastReview.weekly_estimates.map((week) => (
                         <div key={week.week}>
@@ -1538,7 +1542,7 @@ function HandlingRecordsPanel({ records, input, onInputChange, onAdd }) {
   );
 }
 
-function ForecastReviewChart({ points }) {
+function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
   const data = (points || []).map((point) => ({
     week: point.week,
     forecast: Number(point.forecast_quantity || 0),
@@ -1546,6 +1550,11 @@ function ForecastReviewChart({ points }) {
   }));
   if (!data.length) return null;
 
+  const totals = [
+    { key: "actual", label: "实际总量", value: Number(actualTotal || 0) },
+    { key: "forecast", label: "预测总量", value: Number(forecastTotal || 0) },
+  ];
+  const maxTotal = Math.max(...totals.map((item) => item.value), 1);
   const width = 680;
   const height = 250;
   const margin = { top: 22, right: 22, bottom: 46, left: 54 };
@@ -1575,6 +1584,18 @@ function ForecastReviewChart({ points }) {
       <div className="forecast-chart-legend">
         <span className="forecast">预测</span>
         <span className="actual">实际</span>
+      </div>
+      <div className="forecast-total-bars" aria-label="预测总量和实际总量">
+        {totals.map((item) => (
+          <div className={`forecast-total-row ${item.key}`} key={item.key}>
+            <span className="forecast-total-label">{item.label}</span>
+            <div className="forecast-total-track">
+              <span className="forecast-total-fill" style={{ width: `${Math.max((item.value / maxTotal) * 100, 3)}%` }}>
+                <strong>{formatNumber(item.value)}</strong>
+              </span>
+            </div>
+          </div>
+        ))}
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img">
         {yTicks.map((tick) => (

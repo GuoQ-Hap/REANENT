@@ -2102,6 +2102,66 @@ tbody tr:hover {
   background: #64e7ff;
 }
 
+.forecast-total-bars {
+  display: grid;
+  gap: 10px;
+  margin: 4px 18px 14px 92px;
+  padding-right: 160px;
+}
+
+.forecast-total-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.forecast-total-label {
+  overflow: hidden;
+  color: #9ed0d9;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.forecast-total-track {
+  height: 15px;
+  min-width: 0;
+}
+
+.forecast-total-fill {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 34px;
+  height: 100%;
+  padding: 0 8px;
+  border-radius: 4px;
+  box-shadow: 0 0 16px rgba(100, 231, 255, 0.16);
+}
+
+.forecast-total-row.actual .forecast-total-fill {
+  color: #02212a;
+  background: #17b8f0;
+}
+
+.forecast-total-row.forecast .forecast-total-fill {
+  color: #041219;
+  background: #ffcb2e;
+  box-shadow: 0 0 16px rgba(255, 203, 46, 0.16);
+}
+
+.forecast-total-fill strong {
+  overflow: hidden;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 12px;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .forecast-chart svg {
   display: block;
   width: 100%;
@@ -2435,6 +2495,15 @@ tbody tr:hover {
   .weekly-estimate-list,
   .pici-list {
     grid-template-columns: 1fr;
+  }
+
+  .forecast-total-bars {
+    margin: 6px 0 12px;
+    padding-right: 0;
+  }
+
+  .forecast-total-row {
+    grid-template-columns: 58px minmax(0, 1fr);
   }
 
   .chat-message {
