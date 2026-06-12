@@ -14,9 +14,11 @@ import {
   Gauge,
   Layers3,
   MapPin,
+  Plane,
   RefreshCw,
   Search,
   ShieldAlert,
+  Ship,
   TrendingDown,
   Warehouse,
   ZoomOut,
@@ -121,6 +123,14 @@ function App() {
     if (!summary?.items) return [];
     return summary.items;
   }, [summary]);
+  const hasActiveDetailFilter = Boolean(
+    filters.material_code ||
+      filters.country_code ||
+      filters.store_name ||
+      filters.sales_property ||
+      filters.risk_type ||
+      filters.risk_only
+  );
 
   const applySalesPeriod = (nextDates) => {
     const nextFilters = { ...filters, ...nextDates };
@@ -247,6 +257,7 @@ function App() {
             <InventoryTable
               items={filteredItems}
               pagination={summary.pagination}
+              showSkuColumn={hasActiveDetailFilter}
               salesPeriod={formatSalesPeriod(filters.sales_start_date, filters.sales_end_date) || summary.sales_stat_date}
               salesStartDate={filters.sales_start_date}
               salesEndDate={filters.sales_end_date}
@@ -898,6 +909,7 @@ function SourcePanel({ summary }) {
 function InventoryTable({
   items,
   pagination,
+  showSkuColumn,
   salesPeriod,
   salesStartDate,
   salesEndDate,
@@ -972,11 +984,11 @@ function InventoryTable({
         </div>
       </div>
       <div className="table-scroll">
-        <table>
+        <table className={showSkuColumn ? "" : "without-sku-column"}>
           <thead>
             <tr>
               <th>风险</th>
-              <th>SKU</th>
+              {showSkuColumn && <th>SKU</th>}
               <th>区间销量</th>
               <th>断货时间</th>
               <th>店铺 / 国家</th>
@@ -987,14 +999,21 @@ function InventoryTable({
             </tr>
           </thead>
           <tbody>
+            {!items.length && (
+              <tr className="empty-table-row">
+                <td colSpan={showSkuColumn ? 9 : 8}>暂无匹配数据</td>
+              </tr>
+            )}
             {items.map((item) => (
               <tr key={`${item.material_code}-${item.store_name}-${item.fnsku}`}>
                 <td>
                   <RiskBadges item={item} />
                 </td>
-                <td>
-                  <SkuCell item={item} />
-                </td>
+                {showSkuColumn && (
+                  <td>
+                    <SkuCell item={item} />
+                  </td>
+                )}
                 <td>
                   <span className="daily-sales">{formatNumber(item.daily_sales_volume)}</span>
                   <small>{salesPeriod || "-"}</small>
@@ -1511,16 +1530,11 @@ function SupplyFishboneChart({ weeks }) {
                         <span className="placeholder">无到货</span>
                       )}
                     </div>
-                    <div className="supply-week-label">
-                      <span>第 {week.week} 周</span>
-                    </div>
                     <div className="supply-week-bar" aria-hidden="true">
                       {week.days.map((day) => (
-                        <span
-                          className={day.status}
-                          key={day.day}
-                          title={`第 ${day.day} 天 ${day.status === "shortage" ? "断货" : "供货正常"}`}
-                        />
+                        <span className={day.status} key={day.day} title={`第 ${day.day} 天 ${day.status === "shortage" ? "断货" : "供货正常"}`}>
+                          <SupplyTimelineMarker day={day.day} />
+                        </span>
                       ))}
                     </div>
                     <small>
@@ -1534,6 +1548,23 @@ function SupplyFishboneChart({ weeks }) {
         })}
       </div>
     </div>
+  );
+}
+
+const SUPPLY_TIMELINE_MARKERS = {
+  15: { icon: Plane, className: "air", label: "加急空运 15天" },
+  45: { icon: Ship, className: "fast-ship", label: "加急快船45天" },
+  60: { icon: Ship, className: "slow-ship", label: "慢船 60天" },
+};
+
+function SupplyTimelineMarker({ day }) {
+  const marker = SUPPLY_TIMELINE_MARKERS[day];
+  if (!marker) return null;
+  const Icon = marker.icon;
+  return (
+    <span className={`supply-day-marker ${marker.className}`} title={marker.label} aria-label={marker.label}>
+      <Icon size={15} strokeWidth={2.8} />
+    </span>
   );
 }
 
@@ -1697,6 +1728,66 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
       ],
     },
   ];
+  const valuesMatch = (a, b) => Math.abs(Number(a || 0) - Number(b || 0)) < 0.05;
+  const overlapSegments = data.slice(0, -1).flatMap((point, index) => {
+    const nextPoint = data[index + 1];
+    const groups = [];
+    const tripleOverlap =
+      valuesMatch(salesSeries[0].value(point), salesSeries[1].value(point)) &&
+      valuesMatch(salesSeries[1].value(point), salesSeries[2].value(point)) &&
+      valuesMatch(salesSeries[0].value(nextPoint), salesSeries[1].value(nextPoint)) &&
+      valuesMatch(salesSeries[1].value(nextPoint), salesSeries[2].value(nextPoint));
+    if (tripleOverlap) {
+      groups.push({ keys: salesSeries.map((series) => series.key), count: 3 });
+    } else {
+      salesSeries.forEach((series, seriesIndex) => {
+        salesSeries.slice(seriesIndex + 1).forEach((otherSeries) => {
+          if (
+            valuesMatch(series.value(point), otherSeries.value(point)) &&
+            valuesMatch(series.value(nextPoint), otherSeries.value(nextPoint))
+          ) {
+            groups.push({ keys: [series.key, otherSeries.key], count: 2 });
+          }
+        });
+      });
+    }
+    return groups.map((group) => {
+      const sourceSeries = salesSeries.find((series) => series.key === group.keys[0]);
+      return {
+        id: `${point.week}-${nextPoint.week}-${group.keys.join("-")}`,
+        count: group.count,
+        path: line([
+          { week: point.week, value: sourceSeries.value(point) },
+          { week: nextPoint.week, value: sourceSeries.value(nextPoint) },
+        ]),
+      };
+    });
+  });
+  const buildSalesTooltip = (point, series) => {
+    const anchorX = xScale(point.week) || margin.left;
+    const anchorY = yScale(series.value(point));
+    const closeItems = salesSeries
+      .map((item) => ({
+        id: `${point.week}-${item.key}`,
+        label: item.label,
+        y: yScale(item.value(point)),
+        lines: item.rule(point),
+      }))
+      .filter((item) => Math.abs(item.y - anchorY) <= 9);
+    return {
+      id: `${point.week}-${series.key}`,
+      activeIds: closeItems.map((item) => item.id),
+      x: anchorX,
+      y: anchorY,
+      label: point.label,
+      title: closeItems.length > 1 ? "接近/重合点" : series.label,
+      lines: closeItems.flatMap((item, index) => [
+        `${item.label}`,
+        ...item.lines,
+        ...(index < closeItems.length - 1 ? [""] : []),
+      ]),
+    };
+  };
 
   return (
     <div className="forecast-chart" aria-label="周度预测和实际销量折线图">
@@ -1717,32 +1808,49 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
         <path className="forecast-line" d={forecastLine || ""} />
         <path className="actual-line" d={actualLine || ""} />
         <path className="organic-line" d={organicLine || ""} />
-        {activeSalesPoint && <ForecastSvgTooltip point={activeSalesPoint} width={width} height={height} />}
+        {overlapSegments.map((segment) => (
+          <path
+            className={`overlap-line ${segment.count === 3 ? "triple" : "double"}`}
+            d={segment.path || ""}
+            key={segment.id}
+          />
+        ))}
         {data.map((point) => (
           <React.Fragment key={point.week}>
             {salesSeries.map((series) => {
               const value = series.value(point);
               const x = xScale(point.week) || margin.left;
               const y = yScale(value);
-              const isActive = activeSalesPoint?.id === `${point.week}-${series.key}`;
+              const pointId = `${point.week}-${series.key}`;
+              const isActive = activeSalesPoint?.activeIds?.includes(pointId);
               return (
                 <circle
                   className={`${series.dotClass} ${isActive ? "active" : ""}`}
                   cx={x}
                   cy={y}
                   key={series.key}
-                  onMouseEnter={() =>
-                    setActiveSalesPoint({
-                      id: `${point.week}-${series.key}`,
-                      x,
-                      y,
-                      label: point.label,
-                      title: series.label,
-                      lines: series.rule(point),
-                    })
-                  }
+                  onMouseEnter={() => setActiveSalesPoint(buildSalesTooltip(point, series))}
                   onMouseLeave={() => setActiveSalesPoint(null)}
                   r={isActive ? "6" : "4"}
+                />
+              );
+            })}
+          </React.Fragment>
+        ))}
+        {data.map((point) => (
+          <React.Fragment key={`sales-hit-${point.week}`}>
+            {salesSeries.map((series) => {
+              const x = xScale(point.week) || margin.left;
+              const y = yScale(series.value(point));
+              return (
+                <circle
+                  className="sales-hit-area"
+                  cx={x}
+                  cy={y}
+                  key={series.key}
+                  onMouseEnter={() => setActiveSalesPoint(buildSalesTooltip(point, series))}
+                  onMouseLeave={() => setActiveSalesPoint(null)}
+                  r="10"
                 />
               );
             })}
@@ -1765,6 +1873,7 @@ function ForecastReviewChart({ points, forecastTotal, actualTotal }) {
             );
           })}
         </g>
+        {activeSalesPoint && <ForecastSvgTooltip point={activeSalesPoint} width={width} height={height} />}
       </svg>
       <ForecastAdSignalStrip data={data} />
     </div>
@@ -1881,7 +1990,6 @@ function ForecastAdSignalStrip({ data }) {
         ))}
         <path className="ad-spend-line" d={spendLine || ""} />
         <path className="ad-acos-line" d={acosLine || ""} />
-        {activeAdPoint && <ForecastSvgTooltip point={activeAdPoint} width={width} height={height} />}
         {data.map((point) => (
           <React.Fragment key={`ad-point-${point.week}`}>
             {adSeries.map((series) => {
@@ -1922,6 +2030,7 @@ function ForecastAdSignalStrip({ data }) {
         <text className="ad-x-axis-title" x={margin.left - 8} y={height - 28} textAnchor="end">
           周统计
         </text>
+        {activeAdPoint && <ForecastSvgTooltip point={activeAdPoint} width={width} height={height} />}
       </svg>
     </div>
   );
