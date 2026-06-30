@@ -28,6 +28,11 @@ def build_plan(request: TaskRequest, task_type: TaskType, confidence: float) -> 
             PlanStep("rank_risks", "Rank risks by severity, role, country, MSKU, and FNSKU."),
             PlanStep("prepare_followup", "Prepare case creation or human confirmation suggestions."),
         ]
+    elif task_type == TaskType.SKU_FULL_CHAIN_DIAGNOSIS:
+        steps = [
+            PlanStep("diagnose_sku_full_chain", "Analyze inventory, sales, shortage risk, overstock risk, attribution, handling logic, and remedies for one SKU.", "sku_full_chain_diagnosis"),
+            PlanStep("summarize_diagnosis", "Summarize the full-chain SKU diagnosis into owner-oriented next actions."),
+        ]
     elif task_type == TaskType.INVENTORY_RISK:
         steps = [
             PlanStep("collect_inventory", "Collect on-hand, allocated, inbound, and demand data.", "inventory_snapshot"),

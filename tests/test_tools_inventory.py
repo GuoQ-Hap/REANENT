@@ -54,16 +54,15 @@ class InventoryToolTests(unittest.TestCase):
 
         self.assertEqual(connector.field_pack, "purchase_verification")
 
-    def test_inventory_risk_tool_outputs_decision_and_warning(self):
+    def test_inventory_risk_tool_outputs_medium_decision(self):
         connector = FakeMainRuleConnector()
         snapshots = InventorySnapshotTool(connector=connector).run(material_code="A100")
 
-        with self.assertLogs("pmc_agent.tools.inventory", level="WARNING") as logs:
+        with self.assertNoLogs("pmc_agent.tools.inventory", level="WARNING"):
             decisions = InventoryRiskTool(policy=InventoryPolicy(), connector=connector).run(snapshots=snapshots)
 
-        self.assertEqual(decisions[0].risk_level, RiskLevel.HIGH)
+        self.assertEqual(decisions[0].risk_level, RiskLevel.MEDIUM)
         self.assertTrue(decisions[0].recommended_actions)
-        self.assertEqual(logs.records[0].event, "inventory_high_risk_detected")
 
     def test_control_tower_and_weekly_plan_emit_artifact_logs(self):
         signals = ControlTowerTool(connector=FakeMainRuleConnector()).run()

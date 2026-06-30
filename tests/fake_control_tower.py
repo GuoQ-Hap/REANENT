@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from pmc_agent.domain import InventorySnapshot
@@ -22,6 +22,31 @@ class FakeMainRuleConnector:
             code = "A100"
         if code:
             rows = [row for row in rows if code in {row["sku"], row["msku"], row["fnsku"]}]
+        filters = getattr(query_spec, "filters", {}) or {}
+        field_aliases = {
+            "country_code": ("country_code",),
+            "shipments_country": ("shipments_country",),
+            "store_name": ("store_name",),
+            "seasonality": ("seasonality",),
+            "sales_apartment": ("sales_apartment", "sales_department"),
+            "salesman": ("salesman", "sales_person"),
+            "product_manager": ("product_manager",),
+            "seller_id": ("seller_id",),
+            "msku_sales_property": ("sales_property", "msku_sales_property"),
+            "msku_product_property": ("msku_product_property", "product_property"),
+            "msku_status": ("msku_status",),
+            "msku_life_process": ("msku_life_process",),
+        }
+        for field, aliases in field_aliases.items():
+            value = next((filters.get(alias) for alias in aliases if filters.get(alias)), None)
+            if not value:
+                continue
+            values = {str(item) for item in value} if isinstance(value, (list, tuple, set)) else {str(value)}
+            if field == "msku_life_process" and "非新品期" in values:
+                explicit_values = values - {"非新品期"}
+                rows = [row for row in rows if str(row.get(field, "")) in explicit_values or str(row.get(field, "")) != "新品期"]
+            else:
+                rows = [row for row in rows if str(row.get(field, "")) in values]
         return rows
 
     def get_daily_sales_rows(
@@ -170,6 +195,141 @@ class FakeMainRuleConnector:
             rows = [row for row in rows if row["store_name"] == store_name]
         return rows[:limit]
 
+    def get_weekly_sales_estimate_rows(
+        self,
+        material_codes: list[str],
+        version_start_date: str,
+        version_end_date: str,
+        target_start_date: str,
+        target_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "ods_lingxing_sales_estimates_monthly_v1",
+        limit: int = 500,
+    ):
+        codes = {code.upper() for code in material_codes}
+        if not codes.intersection({"A100", "A100-US-BLK", "X001A100", "B0A1000001"}):
+            return []
+        start = datetime.strptime(target_start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(target_end_date, "%Y-%m-%d").date()
+        version_start = datetime.strptime(version_start_date, "%Y-%m-%d").date()
+        version_month = version_start.strftime("%Y-%m")
+        snapshot_date = {
+            "2026-03": "2026-03-12",
+            "2026-04": "2026-04-11",
+            "2026-05": "2026-05-25",
+            "2026-06": "2026-06-11",
+        }.get(version_month, version_start_date)
+        rows = []
+        cursor = start
+        values = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
+        index = 0
+        while cursor <= end and index < len(values):
+            row_end = min(cursor + timedelta(days=6), end)
+            rows.append(
+                _weekly_estimate_row(
+                    "A100",
+                    "A100-US-BLK",
+                    "X001A100",
+                    "Amazon US",
+                    "US",
+                    version_month,
+                    snapshot_date,
+                    cursor.isoformat(),
+                    row_end.isoformat(),
+                    values[index],
+                )
+            )
+            cursor += timedelta(days=7)
+            index += 1
+        if country_code:
+            rows = [row for row in rows if row["country_code"] == country_code or row["channel"] == country_code]
+        if store_name:
+            rows = [row for row in rows if row["store_name"] == store_name]
+        return rows[:limit]
+
+    def get_current_sales_forecast_rows(
+        self,
+        material_codes: list[str],
+        snapshot_start_date: str,
+        snapshot_end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "ads_lingxing_all_warehouse_new_sh_v1",
+        limit: int = 200,
+    ):
+        codes = {code.upper() for code in material_codes}
+        rows = [
+            {
+                "sku": "A100",
+                "msku": "A100-US-BLK",
+                "fnsku": "X001A100",
+                "asin": "B0A1000001",
+                "store_name": "Amazon US",
+                "country_code": "US",
+                "future_30d_sales": 300,
+                "future_60d_sales": 660,
+                "future_90d_sales": 1080,
+                "date": "2026-06-09",
+            },
+            {
+                "sku": "B200",
+                "msku": "B200-US-RED",
+                "fnsku": "X001B200",
+                "asin": "B0B2000002",
+                "store_name": "Amazon US",
+                "country_code": "US",
+                "future_30d_sales": 90,
+                "future_60d_sales": 160,
+                "future_90d_sales": 210,
+                "date": "2026-06-09",
+            },
+        ]
+        rows = [
+            row
+            for row in rows
+            if codes.intersection({row["sku"].upper(), row["msku"].upper(), row["fnsku"].upper(), row["asin"].upper()})
+        ]
+        if country_code:
+            rows = [row for row in rows if row["country_code"] == country_code]
+        if store_name:
+            rows = [row for row in rows if row["store_name"] == store_name]
+        return rows[:limit]
+
+    def get_daily_listing_price_rows(
+        self,
+        material_codes: list[str],
+        start_date: str,
+        end_date: str,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        table_name: str = "ods_lingxing_sc_listing",
+        limit: int = 1200,
+    ):
+        codes = {code.upper() for code in material_codes}
+        if not codes.intersection({"A100", "A100-US-BLK", "X001A100", "B0A1000001"}):
+            return []
+        start = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end = datetime.strptime(end_date, "%Y-%m-%d").date()
+        rows = []
+        cursor = start
+        index = 0
+        while cursor <= end:
+            price = 19.99 if index < 14 else 22.99 if index < 35 else 21.49
+            rows.append(
+                {
+                    "date": cursor.isoformat(),
+                    "price": price,
+                    "listing_price": price + 1,
+                    "landed_price": price,
+                    "currency_code": "USD",
+                    "source_row_count": 1,
+                }
+            )
+            cursor += timedelta(days=1)
+            index += 1
+        return rows[:limit]
+
     def get_pici_shortage_rows(self, store_name: str | None = None, table_name: str = ""):
         rows = [
             _pici_row("X001A100", "Amazon US", "40/80(-40)"),
@@ -227,8 +387,15 @@ def _stockout_row() -> dict[str, Any]:
         "store_name": "Amazon US",
         "country_code": "US",
         "shipments_country": "US",
+        "sales_apartment": "North America",
+        "salesman": "Alice",
+        "product_manager": "PM Chen",
+        "seller_id": "SELLER-US-01",
         "msku_sales_property": "旺",
+        "msku_product_property": "standard",
         "seasonality": "常规",
+        "msku_status": "active",
+        "msku_life_process": "新品期",
         "afn_fulfillable_quantity": 32,
         "fba_warehouse_quantity": 40,
         "overseas_warehouse_quantity": 12,
@@ -255,8 +422,15 @@ def _overstock_row() -> dict[str, Any]:
         "store_name": "Amazon US",
         "country_code": "US",
         "shipments_country": "US",
+        "sales_apartment": "Clearance",
+        "salesman": "Bob",
+        "product_manager": "PM Li",
+        "seller_id": "SELLER-US-02",
         "msku_sales_property": "滞",
+        "msku_product_property": "seasonal",
         "seasonality": "常规",
+        "msku_status": "active",
+        "msku_life_process": "成熟期",
         "afn_fulfillable_quantity": 520,
         "fba_warehouse_quantity": 560,
         "overseas_warehouse_quantity": 340,
@@ -300,6 +474,35 @@ def _estimate_row(
         "country_code": country_code,
         "daily_sales_quantity": quantity,
         "total": quantity,
+    }
+
+
+def _weekly_estimate_row(
+    sku: str,
+    msku: str,
+    fnsku: str,
+    store_name: str,
+    country_code: str,
+    month: str,
+    snapshot_date: str,
+    start_date: str,
+    end_date: str,
+    quantity: float,
+) -> dict[str, Any]:
+    return {
+        "snapshot_date": snapshot_date,
+        "month": int(month[-2:]),
+        "start_date": start_date,
+        "end_date": end_date,
+        "sku": sku,
+        "msku": msku,
+        "fnsku": fnsku,
+        "asin": "B0A1000001",
+        "store_name": store_name,
+        "country_code": country_code,
+        "channel": country_code,
+        "value": quantity,
+        "forecast_quantity": quantity,
     }
 
 

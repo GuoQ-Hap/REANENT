@@ -449,7 +449,61 @@ FEISHU_FEEDBACK_ESCALATE_AFTER_HOURS=24
 | 飞书回传失败 | 记录失败原因，按重试策略补发 |
 | 结果超过长度限制 | 回传摘要，明细改为文件或链接 |
 
-## 8. 验收清单
+## 8. 组织架构同步
+
+飞书组织架构同步独立放在：
+
+```text
+src/pmc_agent/external_integrations/feishu_directory.py
+```
+
+当前实现支持：
+
+- 使用 `POST /open-apis/auth/v3/tenant_access_token/internal` 获取并缓存 `tenant_access_token`。
+- 使用 `POST /open-apis/directory/v1/departments/filter` 从 `parent_department_id=0` 开始递归拉取部门树。
+- 使用 `POST /open-apis/directory/v1/employees/filter` 按部门组合 `base_info.departments.department_id` 和 `work_info.staff_status=1` 拉取在职员工。
+- 员工按 `employee_id/open_id/user_id` 去重，并展开员工多部门关系。
+- 本批次未出现的历史员工会追加一条 `inactive_missing_from_sync` 记录，避免离职人员长期停留在在职池。
+- 提供 `mget_departments()` 和 `mget_employees()`，用于后续按 ID 批量补全详情。
+
+默认 JSONL 输出目录为：
+
+```text
+output/feishu_directory
+```
+
+输出文件对应建议的三张主数据表：
+
+```text
+sys_company_department.jsonl
+sys_company_employee.jsonl
+sys_company_employee_department.jsonl
+sys_company_directory_sync_run.jsonl
+```
+
+手动同步命令：
+
+```powershell
+$env:PYTHONPATH="src"; python scripts/sync_feishu_directory.py --force
+```
+
+只验证接口和统计数量、不写文件：
+
+```powershell
+$env:PYTHONPATH="src"; python scripts/sync_feishu_directory.py --force --dry-run
+```
+
+需要配置：
+
+```dotenv
+FEISHU_DIRECTORY_SYNC_ENABLED=true
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
+FEISHU_DIRECTORY_ROOT_DEPARTMENT_ID=0
+FEISHU_DIRECTORY_OUTPUT_DIR=output/feishu_directory
+```
+
+## 9. 验收清单
 
 - 飞书机器人可以在单聊和群聊中收到用户消息。
 - 外部对接服务可以完成飞书事件验签与去重。
@@ -461,7 +515,7 @@ FEISHU_FEEDBACK_ESCALATE_AFTER_HOURS=24
 - 高风险动作不会被自动执行，只输出草稿和人工确认点。
 - 日志可以按请求 ID 串联飞书事件、Agent 调用、审核结果、反馈内容和飞书回传结果。
 
-## 9. 后续扩展
+## 10. 后续扩展
 
 - 支持飞书消息卡片按钮，例如“查看明细”“生成 Case 草稿”“提交人工确认”。
 - 支持飞书审批流，把采购或发货草稿提交给指定确认人。

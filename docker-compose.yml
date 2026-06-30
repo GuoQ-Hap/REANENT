@@ -1,0 +1,44 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: pmc-agent-api:latest
+    container_name: pmc-api
+    env_file:
+      - .env
+    environment:
+      PYTHONPATH: /app/src
+      PMC_AGENT_LOG_LEVEL: ${PMC_AGENT_LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+      - ./output:/app/output
+      - ./outputs:/app/outputs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: /api
+    image: pmc-agent-web:latest
+    container_name: pmc-web
+    ports:
+      - "${PMC_WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

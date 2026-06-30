@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import * as d3 from "d3";
 import {
   AlertTriangle,
+  BarChart3,
   Boxes,
   CalendarDays,
   CheckCircle2,
@@ -12,28 +13,43 @@ import {
   Filter,
   Gauge,
   Layers3,
+  LogIn,
+  LogOut,
+  Moon,
   Plane,
   RefreshCw,
-  Search,
   ShieldAlert,
   Ship,
-  TrendingDown,
+  Sun,
+  UserRound,
   Warehouse,
+  X,
 } from "lucide-react";
 import "./styles.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const THEME_STORAGE_KEY = "pmc-control-tower-theme";
+
+function apiFetch(url, options = {}) {
+  return fetch(url, { ...options, credentials: "include" });
+}
+
+function initialTheme() {
+  if (typeof window === "undefined") return "dark";
+  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  return savedTheme === "light" ? "light" : "dark";
+}
 
 const riskLabels = {
-  critical: "紧急",
+  critical: "严重",
   high: "高",
-  medium: "中",
-  low: "低",
+  medium: "中等",
+  low: "提示",
   normal: "正常",
 };
 
 const stockoutRiskBadgeLabels = {
-  critical: "紧急断货风险",
+  critical: "严重断货风险",
   high: "高断货风险",
   medium: "中等断货风险",
   low: "低断货风险",
@@ -58,6 +74,33 @@ const riskTypeLabels = {
   anomaly: "异常",
   healthy: "正常",
 };
+
+const salesPropertyLabels = {
+  "爆": "爆款",
+  "旺": "旺款",
+  "平": "平款",
+  "滞": "滞销",
+  __blank__: "未维护",
+};
+
+const chartColorMap = {
+  critical: "#ff5b64",
+  high: "#ff8c4a",
+  medium: "#ffc961",
+  low: "#b6c95d",
+  normal: "#22f0c4",
+  stockout: "#ff5b64",
+  overstock: "#ffc961",
+  anomaly: "#ff8c4a",
+  healthy: "#22f0c4",
+  "爆": "#ff5b64",
+  "旺": "#ffc961",
+  "平": "#64e7ff",
+  "滞": "#b6c95d",
+  __blank__: "#6f9da6",
+};
+
+const chartPalette = ["#23e8ff", "#ffc961", "#ff8c4a", "#b6c95d", "#c7a7ff", "#ff7fc4", "#7ee28b", "#64e7ff"];
 
 const rootCauseTypeLabels = {
   oversell: "超卖",
@@ -108,6 +151,155 @@ const RISK_TYPE_OPTIONS = [
   { value: "anomaly", label: "库存异常" },
   { value: "healthy", label: "正常 SKU" },
 ];
+const OVERSTOCK_RULE_HINTS = {
+  boom_wang: {
+    label: "爆旺",
+    lines: [
+      "可售天数1超过90天：重点监控清货",
+      "可售天数2或3超过120天：停止向FBA补货",
+      "可售天数4超过120天：停止向海外仓和FBA补货",
+      "可售天数5超过180天：停止本地仓补货",
+      "可售天数6超过180天：停止本地仓补货，并停止下采购单",
+    ],
+    sellable: {
+      sellable_1: "爆旺：FBA当前库存可售天数超过90天命中冗余，合理线45天，动作：重点监控清货。",
+      sellable_2: "爆旺：FBA+FBA在途可售天数超过120天命中冗余，合理线90天，动作：停止向FBA补货。",
+      sellable_3: "爆旺：海外仓库存可售天数超过120天命中冗余，合理线90天，动作：停止向FBA补货。",
+      sellable_4: "爆旺：海外仓+全链路在途可售天数超过120天命中冗余，合理线90天，动作：停止向海外仓和FBA补货。",
+      sellable_5: "爆旺：本地仓库存可售天数超过180天命中高冗余，合理线120天，动作：停止本地仓补货。",
+      sellable_6: "爆旺：本地仓+全链路可售天数超过180天命中高冗余，合理线120天，动作：停止本地仓补货，并停止下采购单。",
+    },
+  },
+  flat_stagnant: {
+    label: "平滞",
+    lines: [
+      "可售天数1超过60天：重点监控清货",
+      "可售天数2或3超过105天：停止向FBA补货",
+      "可售天数4超过105天：停止向海外仓和FBA补货",
+      "可售天数5超过150天：停止本地仓补货",
+      "可售天数6超过150天：停止本地仓补货，并停止下采购单",
+    ],
+    sellable: {
+      sellable_1: "平滞：FBA当前库存可售天数超过60天命中冗余，合理线30天，动作：重点监控清货。",
+      sellable_2: "平滞：FBA+FBA在途可售天数超过105天命中冗余，合理线75天，动作：停止向FBA补货。",
+      sellable_3: "平滞：海外仓库存可售天数超过105天命中冗余，合理线75天，动作：停止向FBA补货。",
+      sellable_4: "平滞：海外仓+全链路在途可售天数超过105天命中冗余，合理线75天，动作：停止向海外仓和FBA补货。",
+      sellable_5: "平滞：本地仓库存可售天数超过150天命中高冗余，合理线120天，动作：停止本地仓补货。",
+      sellable_6: "平滞：本地仓+全链路可售天数超过150天命中高冗余，合理线120天，动作：停止本地仓补货，并停止下采购单。",
+    },
+  },
+};
+const STOCKOUT_RULE_TOOLTIP = [
+  "断货判断：只看0-45天内 chazhi 是否为负。",
+  "0天：无断货；1-7天：中等；8-14天：高；15天以上：严重。",
+  "45天后才首次为负时不计入当前断货，只作为补货提示。",
+].join("\n");
+const RISK_LEVEL_RULE_TOOLTIP = [
+  "处理等级按实际命中的业务部分展示。",
+  "断货、冗余、异常分别使用各自口径；详情里分别查看断货明细、冗余依据、库存异常。",
+  "同一SKU命中多类时，页面展示当前最需要先处理的业务风险。",
+].join("\n");
+const RISK_LEVEL_ENTRY_TOOLTIPS = {
+  critical: [
+    "严重：来自断货部分。",
+    "口径：0-45天内 chazhi 为负的天数累计15天以上。",
+    "处理重点：先复核 FBA 可售、头程在途、最快可补货窗口和控销方案。",
+  ].join("\n"),
+  high: [
+    "高：可能来自断货或冗余部分。",
+    "断货口径：0-45天内 chazhi 为负的天数累计8-14天。",
+    "冗余口径：可售天数命中停止补货/拦截补货动作，或FBA库龄271天以上需要批量清货。",
+  ].join("\n"),
+  medium: [
+    "中等：可能来自断货、冗余或异常部分。",
+    "断货口径：0-45天内 chazhi 为负的天数累计1-7天。",
+    "冗余口径：FBA库龄181-270天需要重点清货；异常口径：关键风险标记缺失或异常。",
+  ].join("\n"),
+  low: [
+    "提示：主要来自冗余预警或未来补货提示。",
+    "冗余口径：FBA库龄61-180天进入预警监控。",
+    "补货提示：45天后才首次出现 chazhi 负数时，只提示提前排补货，不计入当前断货。",
+  ].join("\n"),
+  normal: [
+    "正常：当前筛选口径下未命中断货、冗余或库存异常。",
+    "仍需结合销量变化、补货计划和头程在途做日常复核。",
+  ].join("\n"),
+};
+const RISK_TYPE_RULE_TOOLTIP = [
+  "风险类型按业务部分拆开展示：断货、冗余、异常、正常。",
+  "每一类都有独立判断口径，悬浮到具体分类可看细则。",
+  "同一SKU多类同时命中时，详情里仍分别保留各部分依据。",
+].join("\n");
+const RISK_TYPE_ENTRY_TOOLTIPS = {
+  stockout: [
+    "断货预警：看 temp_lingxing_pici_sale 的 chazhi_0_N。",
+    "0-45天内 chazhi 为负才计入当前断货；1-7天中等、8-14天高、15天以上严重。",
+    "45天后才为负时只作为补货提示，需结合 FBA 可售、头程在途和补货窗口复核。",
+  ].join("\n"),
+  overstock: [
+    "冗余库存：按销售属性区分爆旺和平滞。",
+    "看可售天数1-6是否超过对应冗余阈值，并给出停止FBA补货、停止海外仓补货、停止本地仓补货或停止下采购单动作。",
+    "同时叠加FBA库龄：61-180天预警、181-270天重点清货、271天以上批量清货。",
+  ].join("\n"),
+  anomaly: [
+    "库存异常：看 fnsku_out_of_stock_risk_1 至 6。",
+    "字段为空、数据缺失、none 或 null 时，说明底表风险标记不完整，需要复核库存明细和风险字段来源。",
+  ].join("\n"),
+  healthy: [
+    "正常SKU：当前筛选口径下未命中断货、冗余或库存异常。",
+    "仍会保留库存、销量、在途和头程信息，供日常监控使用。",
+  ].join("\n"),
+};
+const DIMENSION_RISK_RULE_TOOLTIP = [
+  "维度风险：按当前筛选后的风险SKU聚合。",
+  "构成会拆成断货、冗余、异常，便于定位是哪个业务部分拉高风险。",
+  "真实风险率用于维度对比：已进入实质处理状态的风险SKU / 维度总SKU。",
+  "点击条目只加入筛选，不跳转SKU明细。",
+].join("\n");
+const ANOMALY_RULE_TOOLTIP = "库存异常判断：fnsku_out_of_stock_risk_1至6中出现空值、数据缺失、none或null时，需要复核底表风险标记、销量波动和库存明细差异。";
+const AGE_RULE_TOOLTIP = [
+  "库龄冗余：61-90天、91-180天为低风险预警监控。",
+  "181-270天为中风险重点清货。",
+  "271天以上为高风险批量清货。",
+].join("\n");
+const FORECAST_RULE_TOOLTIP = [
+  "预测复盘：差值 = 实际销量 - 预测销量，差值比例 = 差值 / 预测销量。",
+  "月度预测变化异常阈值30%，周销量偏差异常阈值20%。",
+  "爆/旺销售偏差阈值20%，平/滞销售偏差阈值10%。",
+].join("\n");
+const SUPPLY_CONTROL_RULE_TOOLTIP = [
+  "供货/控销：控销比例最高60%。",
+  "加急空运第10天到，标准空运第20天到，快船第45天到，慢船第60天到。",
+  "平滞口径从第61天后看慢船，截止第75天；爆旺前端模拟截止第90天。",
+].join("\n");
+const INVENTORY_STRUCTURE_RULE_TOOLTIP = "库存结构：总库存=FBA+海外仓+本地仓+备货；在途合计包含FBA接收/工作、海外/本地在途、仓库在途和计划量。";
+const WARNING_TYPE_RULE_TOOLTIP = "提示字段会把命中的断货、冗余、异常预警拼接展示，未命中的无风险项不会写入。";
+const AGE_ROW_RULE_TOOLTIPS = {
+  "61-90天": "库龄61-90天且有库存时：低风险，预警监控。",
+  "91-180天": "库龄91-180天且有库存时：低风险，预警监控。",
+  "181-270天": "库龄181-270天且有库存时：中风险，重点清货。",
+  "271-330天": "库龄271-330天且有库存时：高风险，批量清货。",
+  "331-365天": "库龄331-365天且有库存时：高风险，批量清货。",
+  "365天+": "库龄365天以上且有库存时：高风险，批量清货。",
+};
+
+function hasFeature(auth, feature) {
+  const features = auth?.permissions?.features || [];
+  return features.includes("*") || features.includes(feature);
+}
+
+function authDisplayName(auth) {
+  return auth?.user?.name || auth?.user?.enterprise_email || auth?.user?.email || "飞书用户";
+}
+const KPI_RULE_TOOLTIPS = {
+  "SKU 数": "当前筛选条件下的SKU总数。",
+  "总库存": "总库存=FBA库存+海外仓库存+本地仓库存+备货。",
+  "FBA 可售": "FBA前端可售库存，用于断货和覆盖天数判断。",
+  "区间销量": "按当前销量开始/结束日期统计的销量。",
+  "断货风险": STOCKOUT_RULE_TOOLTIP,
+  "冗余风险": "冗余风险：命中可售天数冗余或库龄冗余规则的SKU数量。",
+  "库销比": "库销比=总库存/30天需求，表示当前库存约等于多少个30天需求周期。",
+};
 const SEASONALITY_OPTIONS = [
   "四季款",
   "四季款（2-4月高峰期）",
@@ -126,6 +318,24 @@ const SEASONALITY_OPTIONS = [
 ];
 const MSKU_LIFE_PROCESS_OPTIONS = ["新品期", "非新品期"];
 const OMITTED_FILTER_KEYS = new Set(["seller_id"]);
+const FILTER_SUMMARY_ARRAY_FIELDS = [
+  { key: "country_code", label: "国家" },
+  { key: "shipments_country", label: "发货国家" },
+  { key: "store_name", label: "店铺" },
+  { key: "seasonality", label: "季节属性" },
+  { key: "sales_department", label: "销售部门" },
+  { key: "salesman", label: "销售员" },
+  { key: "product_manager", label: "产品经理" },
+  { key: "sales_property", label: "销售属性" },
+  { key: "product_property", label: "产品属性" },
+  { key: "msku_status", label: "MSKU状态" },
+  { key: "msku_life_process", label: "生命周期" },
+  { key: "risk_type", label: "风险类型" },
+];
+const FILTER_SUMMARY_TOGGLE_FIELDS = [
+  { key: "risk_only", label: "只看风险" },
+  { key: "positive_demand", label: "只看有需求" },
+];
 
 function createDefaultFilters() {
   const defaultDate = previousDate();
@@ -233,20 +443,113 @@ function filterValueKey(value) {
   return String(value ?? "");
 }
 
+function filterSummaryValueLabel(key, value) {
+  if (key === "risk_type") return RISK_TYPE_OPTIONS.find((option) => option.value === value)?.label || riskTypeLabels[value] || value;
+  return value;
+}
+
+function buildFilterSummaryChips(filters) {
+  const defaults = createDefaultFilters();
+  const chips = [];
+  const materialCode = String(filters.material_code || "").trim();
+  if (materialCode && materialCode !== String(defaults.material_code || "")) {
+    chips.push({
+      id: "material_code",
+      mode: "field",
+      key: "material_code",
+      label: "SKU",
+      valueLabel: materialCode,
+    });
+  }
+  FILTER_SUMMARY_ARRAY_FIELDS.forEach(({ key, label }) => {
+    if (filterValueKey(filters[key]) === filterValueKey(defaults[key])) return;
+    const values = selectedValues(filters[key]);
+    if (!values.length) {
+      chips.push({
+        id: `${key}:__empty__`,
+        mode: "field",
+        key,
+        label,
+        valueLabel: "全部",
+      });
+      return;
+    }
+    values.forEach((value) => {
+      chips.push({
+        id: `${key}:${value}`,
+        mode: "array-value",
+        key,
+        value,
+        label,
+        valueLabel: filterSummaryValueLabel(key, value),
+      });
+    });
+  });
+  if (filters.sales_start_date !== defaults.sales_start_date || filters.sales_end_date !== defaults.sales_end_date) {
+    chips.push({
+      id: "sales_period",
+      mode: "date-range",
+      label: "销量区间",
+      valueLabel: `${filters.sales_start_date || "-"} 至 ${filters.sales_end_date || "-"}`,
+    });
+  }
+  FILTER_SUMMARY_TOGGLE_FIELDS.forEach(({ key, label }) => {
+    if (Boolean(filters[key]) === Boolean(defaults[key])) return;
+    chips.push({
+      id: key,
+      mode: "toggle",
+      key,
+      label,
+      valueLabel: "已开启",
+    });
+  });
+  return chips;
+}
+
 function App() {
+  const [theme, setTheme] = useState(() => initialTheme());
+  const [auth, setAuth] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [recommendationsExporting, setRecommendationsExporting] = useState(false);
   const [skuInvestigationExporting, setSkuInvestigationExporting] = useState(false);
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [activeSkuItem, setActiveSkuItem] = useState(null);
   const [activeWorkspace, setActiveWorkspace] = useState("overview");
+  const [activeWarehouseStage, setActiveWarehouseStage] = useState("local");
   const pageSize = 100;
   const [filters, setFilters] = useState(() => createDefaultFilters());
 
-  const loadSummary = async (targetPage = page, targetFilters = filters) => {
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+  }, [theme]);
+
+  const loadAuth = async () => {
+    setAuthLoading(true);
+    try {
+      const response = await apiFetch(`${API_BASE_URL}/auth/me`);
+      if (!response.ok) throw new Error(`AUTH ${response.status}`);
+      setAuth(await response.json());
+    } catch (err) {
+      setAuth({ authenticated: false, auth_required: false, permissions: { features: ["*"], all_data: true }, user: {} });
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const loginWithFeishu = () => {
+    window.location.href = `${API_BASE_URL}/auth/feishu/login?next=${encodeURIComponent(window.location.href)}`;
+  };
+
+  const logout = async () => {
+    await apiFetch(`${API_BASE_URL}/auth/logout`, { method: "POST" });
+    setSummary(null);
+    await loadAuth();
+  };
+
+  const loadSummary = async (targetPage = page, targetFilters = filters, options = {}) => {
     setLoading(true);
     setError("");
     try {
@@ -255,7 +558,13 @@ function App() {
       params.set("page", String(targetPage));
       params.set("page_size", String(pageSize));
       params.set("max_rows", "20000");
-      const response = await fetch(`${API_BASE_URL}/control-tower/summary?${params.toString()}`);
+      if (options.refresh) params.set("refresh", "true");
+      const response = await apiFetch(`${API_BASE_URL}/control-tower/summary?${params.toString()}`);
+      if (response.status === 401) {
+        await loadAuth();
+        throw new Error("请先通过飞书登录");
+      }
+      if (response.status === 403) throw new Error("当前账号没有查看控制塔的权限");
       if (!response.ok) throw new Error(`API ${response.status}`);
       const payload = await response.json();
       setSummary(payload);
@@ -267,67 +576,6 @@ function App() {
     }
   };
 
-  const downloadInvestigationExcel = async () => {
-    setExporting(true);
-    setError("");
-    try {
-      const params = new URLSearchParams();
-      params.set("max_rows", "20000");
-      const response = await fetch(`${API_BASE_URL}/control-tower/export/daily-investigation?${params.toString()}`);
-      if (!response.ok) throw new Error(`导出失败 ${response.status}`);
-      const blob = await response.blob();
-      const disposition = response.headers.get("Content-Disposition") || "";
-      const encodedName = disposition.match(/filename\\*=UTF-8''([^;]+)/)?.[1];
-      const fallbackName = disposition.match(/filename="?([^";]+)"?/)?.[1];
-      const filename = encodedName
-        ? decodeURIComponent(encodedName)
-        : fallbackName || `爆旺断货冗余排查_${previousDate()}.xlsx`;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "排查表生成失败");
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const downloadRecommendationsExcel = async () => {
-    setRecommendationsExporting(true);
-    setError("");
-    try {
-      const params = new URLSearchParams();
-      appendActiveFilters(params, filters);
-      params.set("max_rows", "20000");
-      const response = await fetch(`${API_BASE_URL}/control-tower/export/recommendations?${params.toString()}`);
-      if (!response.ok) throw new Error(`导出失败 ${response.status}`);
-      const blob = await response.blob();
-      const disposition = response.headers.get("Content-Disposition") || "";
-      const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1];
-      const fallbackName = disposition.match(/filename="?([^";]+)"?/)?.[1];
-      const filename = encodedName
-        ? decodeURIComponent(encodedName)
-        : fallbackName || `库存控销补货建议_${previousDate()}.xlsx`;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "建议导出失败");
-    } finally {
-      setRecommendationsExporting(false);
-    }
-  };
-
   const downloadSkuInvestigationExcel = async () => {
     setSkuInvestigationExporting(true);
     setError("");
@@ -335,7 +583,8 @@ function App() {
       const params = new URLSearchParams();
       appendActiveFilters(params, filters);
       params.set("max_rows", "20000");
-      const response = await fetch(`${API_BASE_URL}/control-tower/export/sku-investigation?${params.toString()}`);
+      const response = await apiFetch(`${API_BASE_URL}/control-tower/export/sku-investigation?${params.toString()}`);
+      if (response.status === 403) throw new Error("当前账号没有导出权限");
       if (!response.ok) throw new Error(`导出失败 ${response.status}`);
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") || "";
@@ -360,8 +609,17 @@ function App() {
   };
 
   useEffect(() => {
-    loadSummary(1);
+    loadAuth();
   }, []);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (auth?.auth_required && !auth?.authenticated) {
+      setLoading(false);
+      return;
+    }
+    loadSummary(1);
+  }, [authLoading, auth?.authenticated, auth?.auth_required]);
 
   const filteredItems = useMemo(() => {
     if (!summary?.items) return [];
@@ -370,6 +628,10 @@ function App() {
   const countryOptions = useMemo(
     () => optionValuesWithDefaults(COMMON_COUNTRY_OPTIONS, summary?.filter_options?.country_code, filters.country_code),
     [summary?.filter_options?.country_code, filters.country_code]
+  );
+  const mskuStatusOptions = useMemo(
+    () => optionValuesWithDefaults(MSKU_STATUS_OPTIONS, summary?.filter_options?.msku_status, filters.msku_status),
+    [summary?.filter_options?.msku_status, filters.msku_status]
   );
   const hasActiveDetailFilter = useMemo(() => {
     const defaults = createDefaultFilters();
@@ -393,16 +655,25 @@ function App() {
       || Boolean(filters.positive_demand) !== Boolean(defaults.positive_demand);
   }, [filters]);
   const filterCount = useMemo(() => activeFilterCount(filters), [filters]);
+  const filterSummaryChips = useMemo(() => buildFilterSummaryChips(filters), [filters]);
   const riskTotal = useMemo(() => {
     const distribution = summary?.risk_type_distribution || {};
     return ["stockout", "overstock", "anomaly"].reduce((total, key) => total + Number(distribution[key] || 0), 0);
   }, [summary]);
-  const workspaceTabs = useMemo(() => [
-    { id: "overview", label: "风险总览", meta: `${formatNumber(riskTotal)} 风险`, icon: Gauge },
-    { id: "detail", label: "SKU 明细", meta: `${formatNumber(summary?.pagination?.total_count ?? filteredItems.length)} 行`, icon: Boxes },
-    { id: "firstLeg", label: "头程查询", meta: "货件", icon: Ship },
-    { id: "standards", label: "字段口径", meta: `${formatNumber(summary?.field_decisions?.length || 0)} 字段`, icon: Database },
-  ], [filteredItems.length, riskTotal, summary?.field_decisions?.length, summary?.pagination?.total_count]);
+  const workspaceTabs = useMemo(() => {
+    const tabs = [
+      { id: "overview", feature: "overview", label: "风险总览", meta: `${formatNumber(riskTotal)} 风险`, icon: Gauge },
+      { id: "detail", feature: "detail", label: "SKU 明细", meta: `${formatNumber(summary?.pagination?.total_count ?? filteredItems.length)} 行`, icon: Boxes },
+      { id: "warehouse", feature: "warehouse", label: "仓库明细", meta: "库存", icon: Warehouse },
+      { id: "standards", feature: "standards", label: "字段口径", meta: `${formatNumber(summary?.field_decisions?.length || 0)} 字段`, icon: Database },
+    ];
+    return tabs.filter((tab) => hasFeature(auth, tab.feature));
+  }, [auth, filteredItems.length, riskTotal, summary?.field_decisions?.length, summary?.pagination?.total_count]);
+  useEffect(() => {
+    if (!workspaceTabs.some((tab) => tab.id === activeWorkspace)) {
+      setActiveWorkspace("overview");
+    }
+  }, [activeWorkspace, workspaceTabs]);
 
   const applySalesPeriod = (nextDates) => {
     const nextFilters = { ...filters, ...nextDates };
@@ -417,6 +688,71 @@ function App() {
     loadSummary(1, nextFilters);
   };
 
+  const removeFilterChip = (chip) => {
+    const defaults = createDefaultFilters();
+    const nextFilters = { ...filters };
+    if (chip.mode === "array-value") {
+      const nextValues = selectedValues(filters[chip.key]).filter((value) => value !== chip.value);
+      nextFilters[chip.key] = nextValues.length || !selectedValues(defaults[chip.key]).length ? nextValues : defaults[chip.key];
+    } else if (chip.mode === "date-range") {
+      nextFilters.sales_start_date = defaults.sales_start_date;
+      nextFilters.sales_end_date = defaults.sales_end_date;
+    } else if (chip.key) {
+      nextFilters[chip.key] = defaults[chip.key];
+    }
+    applyFilters(nextFilters);
+  };
+
+  const drillIntoRiskDimension = (fieldName, entry) => {
+    if (!entry?.key || entry.disabled || entry.key === "__blank__") return;
+    const nextFilters = { ...filters, [fieldName]: [entry.key], risk_only: true };
+    setFilters(nextFilters);
+    setPage(1);
+    loadSummary(1, nextFilters);
+  };
+
+  const drillIntoRiskType = (entry) => {
+    if (!entry?.key || entry.disabled) return;
+    const nextFilters = {
+      ...filters,
+      risk_type: [entry.key],
+      risk_only: entry.key !== "healthy",
+    };
+    setFilters(nextFilters);
+    setPage(1);
+    loadSummary(1, nextFilters);
+  };
+  const openWarehouseDetail = (stage) => {
+    setActiveWarehouseStage(stage);
+    setActiveWorkspace("warehouse");
+  };
+
+  if (authLoading) {
+    return (
+      <main className="app-shell">
+        <section className="loading-panel">正在校验飞书登录状态...</section>
+      </main>
+    );
+  }
+
+  if (auth?.auth_required && !auth?.authenticated) {
+    return (
+      <main className="app-shell">
+        <section className="login-panel">
+          <div>
+            <div className="eyebrow">PMC Inventory Control Tower</div>
+            <h1>库存控制塔</h1>
+            <p>请使用飞书授权进入。</p>
+          </div>
+          <button className="primary-button" onClick={loginWithFeishu}>
+            <LogIn size={16} />
+            <span>飞书登录</span>
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <>
     <main className="app-shell">
@@ -426,34 +762,62 @@ function App() {
           <h1>库存控制塔</h1>
         </div>
         <div className="topbar-actions">
-          <button className="primary-button" onClick={downloadInvestigationExcel} disabled={exporting}>
-            <Download size={16} />
-            <span>{exporting ? "生成中" : "生成排查表"}</span>
+          <button
+            className="theme-toggle-button"
+            type="button"
+            onClick={() => setTheme((current) => (current === "light" ? "dark" : "light"))}
+            title={theme === "light" ? "切换为深色控制塔风格" : "切换为白底简约风格"}
+            aria-label={theme === "light" ? "切换为深色控制塔风格" : "切换为白底简约风格"}
+          >
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+            <span>{theme === "light" ? "深色" : "白底"}</span>
           </button>
-          <button className="primary-button" onClick={downloadRecommendationsExcel} disabled={recommendationsExporting}>
-            <Download size={16} />
-            <span>{recommendationsExporting ? "导出中" : "导出建议"}</span>
-          </button>
-          <button className="primary-button" onClick={downloadSkuInvestigationExcel} disabled={skuInvestigationExporting}>
-            <Download size={16} />
-            <span>{skuInvestigationExporting ? "导出中" : "导出SKU排查"}</span>
-          </button>
-          <button className="primary-button" onClick={() => loadSummary(page)} disabled={loading}>
+          {auth?.authenticated && (
+            <span className="user-pill" title={auth?.permissions?.role || ""}>
+              <UserRound size={15} />
+              <span>{authDisplayName(auth)}</span>
+              <em>{auth?.permissions?.role || "member"}</em>
+            </span>
+          )}
+          {hasFeature(auth, "export") && (
+            <button className="primary-button" onClick={downloadSkuInvestigationExcel} disabled={skuInvestigationExporting}>
+              <Download size={16} />
+              <span>{skuInvestigationExporting ? "导出中" : "SKU排查"}</span>
+            </button>
+          )}
+          <button className="primary-button" onClick={() => loadSummary(page, filters, { refresh: true })} disabled={loading}>
             <RefreshCw size={16} />
             <span>{loading ? "刷新中" : "刷新"}</span>
           </button>
+          {auth?.authenticated && (
+            <button className="ghost-icon-button" type="button" onClick={logout} title="退出登录" aria-label="退出登录">
+              <LogOut size={16} />
+            </button>
+          )}
         </div>
       </section>
 
       <section className="toolbar" aria-label="控制塔筛选器">
-        <label className="input-wrap">
-          <Search size={16} />
-          <input
-            value={filters.material_code}
-            placeholder="SKU / MSKU / FNSKU"
-            onChange={(event) => setFilters({ ...filters, material_code: event.target.value })}
-          />
-        </label>
+        <div className="filter-summary-wrap" aria-label="筛选条件汇总">
+          <Filter size={16} />
+          <div className="filter-summary-scroll">
+            {filterSummaryChips.length ? (
+              filterSummaryChips.map((chip) => (
+                <span className="filter-summary-chip" key={chip.id} title={`${chip.label}: ${chip.valueLabel}`}>
+                  <span className="filter-summary-chip-text">
+                    <b>{chip.label}</b>
+                    <em>{chip.valueLabel}</em>
+                  </span>
+                  <button type="button" onClick={() => removeFilterChip(chip)} aria-label={`移除${chip.label}${chip.valueLabel}`}>
+                    <X size={12} />
+                  </button>
+                </span>
+              ))
+            ) : (
+              <span className="filter-summary-empty">暂无额外筛选条件</span>
+            )}
+          </div>
+        </div>
         <label className="input-wrap">
           <Filter size={16} />
           <select
@@ -470,12 +834,19 @@ function App() {
           </select>
         </label>
         <label className="input-wrap">
-          <Warehouse size={16} />
-          <input
-            value={firstSelectedValue(filters.store_name)}
-            placeholder="店铺"
-            onChange={(event) => setFilters({ ...filters, store_name: event.target.value ? [event.target.value] : [] })}
-          />
+          <CheckCircle2 size={16} />
+          <select
+            value={firstSelectedValue(filters.msku_status)}
+            onChange={(event) => setFilters({ ...filters, msku_status: event.target.value ? [event.target.value] : [] })}
+            aria-label="MSKU状态"
+          >
+            <option value="">MSKU状态</option>
+            {mskuStatusOptions.map((option) => (
+              <option value={option} key={option}>
+                {option}
+              </option>
+            ))}
+          </select>
         </label>
         <select
           value={firstSelectedValue(filters.sales_property)}
@@ -532,10 +903,18 @@ function App() {
             {activeWorkspace === "overview" && (
               <section className="workspace-view overview-view">
                 <KpiGrid summary={summary} />
-                <section className="dashboard-grid risk-dashboard-grid">
-                  <RiskBreakdown title="风险等级" data={summary.risk_distribution} labels={riskLabels} />
-                  <RiskBreakdown title="风险类型" data={summary.risk_type_distribution} labels={riskTypeLabels} />
-                </section>
+                <InventoryFlowPanel
+                  summary={summary}
+                  items={filteredItems}
+                  loading={loading}
+                  selectedStage={activeWarehouseStage}
+                  onStageSelect={openWarehouseDetail}
+                />
+                <RiskOverview
+                  summary={summary}
+                  onRiskTypeSelect={drillIntoRiskType}
+                  onDimensionSelect={drillIntoRiskDimension}
+                />
               </section>
             )}
             {activeWorkspace === "detail" && (
@@ -566,15 +945,19 @@ function App() {
                 />
               </section>
             )}
+            {activeWorkspace === "warehouse" && (
+              <section className="workspace-view warehouse-detail-view">
+                <WarehouseDetailPanel
+                  summary={summary}
+                  activeStage={activeWarehouseStage}
+                  onStageChange={setActiveWarehouseStage}
+                />
+              </section>
+            )}
             {activeWorkspace === "standards" && (
               <section className="workspace-view standards-view">
                 <SourcePanel summary={summary} />
                 <FieldDecisionTable fields={summary.field_decisions} />
-              </section>
-            )}
-            {activeWorkspace === "firstLeg" && (
-              <section className="workspace-view first-leg-view">
-                <FirstLegShipmentPanel initialQuery={filters.material_code} />
               </section>
             )}
           </>
@@ -617,14 +1000,14 @@ function KpiGrid({ summary }) {
     { label: "FBA 可售", value: formatNumber(kpis.fba_sellable), icon: Warehouse, tone: "neutral" },
     { label: "区间销量", value: formatNumber(kpis.daily_sales_volume), icon: Gauge, tone: "neutral" },
     { label: "断货风险", value: kpis.stockout_count, icon: ShieldAlert, tone: "danger" },
-    { label: "冗余风险", value: kpis.overstock_count, icon: TrendingDown, tone: "warn" },
+    { label: "库销比", value: formatInventorySalesRatio(kpis.total_inventory, kpis.demand_30d), icon: BarChart3, tone: "warn" },
   ];
   return (
     <section className="kpi-grid">
       {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <article className={`kpi-card ${card.tone}`} key={card.label}>
+          <article className={`kpi-card ${card.tone}`} key={card.label} title={KPI_RULE_TOOLTIPS[card.label] || undefined}>
             <div className="kpi-icon">
               <Icon size={19} />
             </div>
@@ -639,32 +1022,457 @@ function KpiGrid({ summary }) {
   );
 }
 
-function RiskBreakdown({ title, data, labels }) {
-  const entries = Object.entries(data || {});
-  const total = entries.reduce((sum, [, value]) => sum + Number(value || 0), 0) || 1;
-  const ordered = entries.sort((a, b) => Number(b[1]) - Number(a[1]));
+function RiskOverview({ summary, onRiskTypeSelect, onDimensionSelect }) {
+  const [activeRanking, setActiveRanking] = useState(null);
+  const dimensions = summary.risk_dimensions || {};
+  const riskLevelEntries = distributionPieEntries(summary.risk_distribution, riskLabels);
+  const riskTypeEntries = distributionPieEntries(summary.risk_type_distribution, riskTypeLabels);
+  const countryEntries = dimensionPieEntries(dimensions.country_code, {}, COMMON_COUNTRY_OPTIONS);
+  const storeEntries = dimensionPieEntries(dimensions.store_name);
+  const departmentEntries = dimensionPieEntries(dimensions.sales_department);
+  const salesmanEntries = dimensionPieEntries(dimensions.salesman);
+  const salesPropertyEntries = dimensionPieEntries(dimensions.sales_property, salesPropertyLabels, SALES_PROPERTY_OPTIONS);
+  const seasonalityEntries = dimensionPieEntries(dimensions.seasonality, {}, SEASONALITY_OPTIONS);
+  const countryRankingEntries = dimensionRankingEntries(dimensions.country_code);
+  const storeRankingEntries = dimensionRankingEntries(dimensions.store_name);
+  const departmentRankingEntries = dimensionRankingEntries(dimensions.sales_department);
+  const salesmanRankingEntries = dimensionRankingEntries(dimensions.salesman);
+  const salesPropertyRankingEntries = dimensionRankingEntries(dimensions.sales_property, salesPropertyLabels);
+  const seasonalityRankingEntries = dimensionRankingEntries(dimensions.seasonality);
+  const openRanking = (ranking) => {
+    setActiveRanking({
+      ...ranking,
+      entries: (ranking.entries || []).filter((entry) => Number(entry.value || 0) > 0),
+    });
+  };
+  const openDimensionRanking = (title, entries, fieldName, ruleTooltip = DIMENSION_RISK_RULE_TOOLTIP) => {
+    openRanking({
+      title: `${title}排名`,
+      eyebrow: title,
+      subtitle: "按风险 SKU 数降序",
+      entries,
+      showRiskMix: true,
+      ruleTooltip,
+      onEntrySelect: (entry) => onDimensionSelect(fieldName, entry),
+    });
+  };
+
   return (
-    <section className="panel">
+    <>
+      <section className="dashboard-grid risk-dashboard-grid">
+        <RiskPieCard
+          title="风险等级"
+          entries={riskLevelEntries}
+          centerLabel="SKU"
+          ruleTooltip={RISK_LEVEL_RULE_TOOLTIP}
+          onRankingOpen={() =>
+            openRanking({
+              title: "风险等级排名",
+              eyebrow: "风险等级",
+              subtitle: "按处理等级 SKU 数排序",
+              entries: riskLevelEntries,
+              ruleTooltip: RISK_LEVEL_RULE_TOOLTIP,
+            })
+          }
+        />
+        <RiskPieCard
+          title="风险类型"
+          entries={riskTypeEntries}
+          centerLabel="SKU"
+          ruleTooltip={RISK_TYPE_RULE_TOOLTIP}
+          onEntrySelect={onRiskTypeSelect}
+          onRankingOpen={() =>
+            openRanking({
+              title: "风险类型排名",
+              eyebrow: "风险类型",
+              subtitle: "按断货、冗余、异常风险 SKU 数排序",
+              entries: riskTypeEntries,
+              ruleTooltip: RISK_TYPE_RULE_TOOLTIP,
+              onEntrySelect: onRiskTypeSelect,
+            })
+          }
+        />
+      </section>
+      <section className="dashboard-grid risk-dimension-grid">
+        <RiskPieCard
+          title="国家风险"
+          entries={countryEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={DIMENSION_RISK_RULE_TOOLTIP}
+          onEntrySelect={(entry) => onDimensionSelect("country_code", entry)}
+          onRankingOpen={() => openDimensionRanking("国家风险", countryRankingEntries, "country_code")}
+          showRiskMix
+        />
+        <RiskPieCard
+          title="店铺风险"
+          entries={storeEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={DIMENSION_RISK_RULE_TOOLTIP}
+          onEntrySelect={(entry) => onDimensionSelect("store_name", entry)}
+          onRankingOpen={() => openDimensionRanking("店铺风险", storeRankingEntries, "store_name")}
+          showRiskMix
+        />
+        <RiskPieCard
+          title="部门风险"
+          entries={departmentEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={DIMENSION_RISK_RULE_TOOLTIP}
+          onEntrySelect={(entry) => onDimensionSelect("sales_department", entry)}
+          onRankingOpen={() => openDimensionRanking("部门风险", departmentRankingEntries, "sales_department")}
+          showRiskMix
+        />
+        <RiskPieCard
+          title="人员风险"
+          entries={salesmanEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={DIMENSION_RISK_RULE_TOOLTIP}
+          onEntrySelect={(entry) => onDimensionSelect("salesman", entry)}
+          onRankingOpen={() => openDimensionRanking("人员风险", salesmanRankingEntries, "salesman")}
+          showRiskMix
+        />
+        <RiskPieCard
+          title="爆旺平滞风险"
+          entries={salesPropertyEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={`${DIMENSION_RISK_RULE_TOOLTIP}\n${formatOverstockRuleHintText("爆")}\n${formatOverstockRuleHintText("平")}`}
+          onEntrySelect={(entry) => onDimensionSelect("sales_property", entry)}
+          onRankingOpen={() =>
+            openDimensionRanking(
+              "爆旺平滞风险",
+              salesPropertyRankingEntries,
+              "sales_property",
+              `${DIMENSION_RISK_RULE_TOOLTIP}\n${formatOverstockRuleHintText("爆")}\n${formatOverstockRuleHintText("平")}`,
+            )
+          }
+          showRiskMix
+        />
+        <RiskPieCard
+          title="季节属性风险"
+          entries={seasonalityEntries}
+          centerLabel="风险SKU"
+          ruleTooltip={DIMENSION_RISK_RULE_TOOLTIP}
+          onEntrySelect={(entry) => onDimensionSelect("seasonality", entry)}
+          onRankingOpen={() => openDimensionRanking("季节属性风险", seasonalityRankingEntries, "seasonality")}
+          showRiskMix
+        />
+      </section>
+      {activeRanking && <RiskRankingDialog ranking={activeRanking} onClose={() => setActiveRanking(null)} />}
+    </>
+  );
+}
+
+function RiskPieCard({ title, entries, centerLabel = "风险", onEntrySelect, onRankingOpen, showRiskMix = false, ruleTooltip = "" }) {
+  const cleanEntries = (entries || []).filter((entry) => Number(entry.value || 0) > 0);
+  const total = cleanEntries.reduce((sum, entry) => sum + Number(entry.value || 0), 0);
+  const arcs = useMemo(() => {
+    if (!total) return [];
+    return d3
+      .pie()
+      .sort(null)
+      .value((entry) => Number(entry.value || 0))(cleanEntries);
+  }, [cleanEntries, total]);
+  const arcPath = useMemo(() => d3.arc().innerRadius(44).outerRadius(70).cornerRadius(3), []);
+  const percentOfTotal = (value) => (total ? Number(value || 0) / total : 0);
+
+  return (
+    <section className="panel risk-pie-panel">
       <div className="panel-title">
         <AlertTriangle size={17} />
-        <h2>{title}</h2>
+        <h2 title={ruleTooltip || undefined}>{title}</h2>
+        {onRankingOpen && (
+          <button
+            type="button"
+            className="risk-rank-button"
+            onClick={onRankingOpen}
+            disabled={!total}
+            title={[`${title}排名`, ruleTooltip].filter(Boolean).join("\n")}
+            aria-label={`${title}排名`}
+          >
+            <BarChart3 size={16} />
+          </button>
+        )}
       </div>
-      <div className="bar-list">
-        {ordered.map(([key, value]) => {
-          const width = Math.max(6, (Number(value) / total) * 100);
-          return (
-            <div className="bar-row" key={key}>
-              <span>{labels[key] || key}</span>
-              <div className="bar-track">
-                <div className={`bar-fill ${key}`} style={{ width: `${width}%` }} />
-              </div>
-              <strong>{value}</strong>
-            </div>
-          );
-        })}
-      </div>
+      {total ? (
+        <div className="risk-pie-body">
+          <svg className="risk-pie-svg" viewBox="0 0 184 184" role="img" aria-label={`${title}饼图`}>
+            <g transform="translate(92 92)">
+              {arcs.map((arc, index) => {
+                const entry = arc.data;
+                return (
+                  <path
+                    key={entry.key}
+                    d={arcPath(arc)}
+                    fill={riskChartColor(entry, index)}
+                    className={`risk-pie-slice ${onEntrySelect && !entry.disabled ? "clickable" : ""} ${entry.disabled ? "disabled" : ""}`}
+                    onClick={() => {
+                      if (!entry.disabled) onEntrySelect?.(entry);
+                    }}
+                  >
+                    <title>{riskPieEntryTooltip(title, entry, percentOfTotal(entry.value), showRiskMix, ruleTooltip)}</title>
+                  </path>
+                );
+              })}
+              <circle r="35" className="risk-pie-center" />
+              <text className="risk-pie-total" textAnchor="middle" y="-3">{formatNumber(total)}</text>
+              <text className="risk-pie-label" textAnchor="middle" y="17">{centerLabel}</text>
+            </g>
+          </svg>
+          <div className="risk-pie-legend">
+            {cleanEntries.map((entry, index) => {
+              const clickable = Boolean(onEntrySelect) && !entry.disabled;
+              const LegendTag = clickable ? "button" : "div";
+              return (
+                <LegendTag
+                  type={clickable ? "button" : undefined}
+                  className={`risk-pie-legend-row ${clickable ? "clickable" : ""}`}
+                  key={entry.key}
+                  title={riskPieEntryTooltip(title, entry, percentOfTotal(entry.value), showRiskMix, ruleTooltip)}
+                  onClick={clickable ? () => onEntrySelect(entry) : undefined}
+                >
+                  <span className="risk-pie-swatch" style={{ background: riskChartColor(entry, index) }} />
+                  <span className="risk-pie-name">{entry.label}</span>
+                  <strong>{formatNumber(entry.value)}</strong>
+                  <small>{formatRatioPercent(percentOfTotal(entry.value))}</small>
+                  {showRiskMix && (
+                    <em>
+                      断 {formatNumber(entry.stockoutCount || 0)} / 冗 {formatNumber(entry.overstockCount || 0)}
+                    </em>
+                  )}
+                </LegendTag>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="risk-pie-empty">暂无风险分布</div>
+      )}
     </section>
   );
+}
+
+function RiskRankingDialog({ ranking, onClose }) {
+  if (typeof document === "undefined") return null;
+  const entries = ranking.entries || [];
+  const total = entries.reduce((sum, entry) => sum + Number(entry.value || 0), 0);
+  const maxValue = Math.max(...entries.map((entry) => Number(entry.value || 0)), 1);
+  const topEntry = entries[0];
+  const ruleTooltip = ranking.ruleTooltip || "";
+
+  return createPortal(
+    <div className="risk-rank-backdrop" role="presentation" onClick={onClose}>
+      <section className="risk-rank-dialog" role="dialog" aria-modal="true" aria-label={ranking.title} onClick={(event) => event.stopPropagation()}>
+        <div className="risk-rank-head">
+          <div>
+            <span>{ranking.eyebrow || "风险排名"}</span>
+            <strong>{ranking.title}</strong>
+            <p title={ruleTooltip || undefined}>{ranking.subtitle || "按风险 SKU 数降序"}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="关闭排名">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="risk-rank-body">
+          <div className="risk-rank-summary">
+            <div>
+              <span>排名项</span>
+              <strong>{formatNumber(entries.length)}</strong>
+            </div>
+            <div>
+              <span>风险SKU</span>
+              <strong>{formatNumber(total)}</strong>
+            </div>
+            <div>
+              <span>最多风险项</span>
+              <strong>{topEntry ? `${topEntry.label} ${formatNumber(topEntry.value)}` : "-"}</strong>
+            </div>
+          </div>
+          {entries.length ? (
+            <div className="risk-rank-bars">
+              {entries.map((entry, index) => {
+                const value = Number(entry.value || 0);
+                const canDrill = Boolean(ranking.onEntrySelect) && !entry.disabled;
+                const RowTag = canDrill ? "button" : "div";
+                const width = maxValue ? Math.max(5, (value / maxValue) * 100) : 0;
+                const detailText = riskRankingDetailText(entry, ranking.showRiskMix);
+                return (
+                  <RowTag
+                    type={canDrill ? "button" : undefined}
+                    className={`risk-rank-row ${canDrill ? "clickable" : ""}`}
+                    key={entry.key || `${entry.label}-${index}`}
+                    title={riskPieEntryTooltip(ranking.eyebrow || ranking.title, entry, total ? value / total : 0, ranking.showRiskMix, ruleTooltip)}
+                    onClick={
+                      canDrill
+                        ? () => {
+                            onClose();
+                            ranking.onEntrySelect(entry);
+                          }
+                        : undefined
+                    }
+                  >
+                    <span className="risk-rank-index">{String(index + 1).padStart(2, "0")}</span>
+                    <span className="risk-rank-name">
+                      <i style={{ background: riskChartColor(entry, index) }} />
+                      <span>{entry.label}</span>
+                    </span>
+                    <span className="risk-rank-track" aria-hidden="true">
+                      <span className="risk-rank-fill" style={{ width: `${width}%`, background: riskChartColor(entry, index) }} />
+                    </span>
+                    <strong>{formatNumber(value)}</strong>
+                    <small>{formatRatioPercent(total ? value / total : 0)}</small>
+                    {detailText && <em>{detailText}</em>}
+                  </RowTag>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="risk-rank-empty">暂无排名数据</div>
+          )}
+        </div>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
+function distributionPieEntries(data, labels = {}) {
+  const order = ["critical", "high", "medium", "low", "normal", "stockout", "overstock", "anomaly", "healthy"];
+  return Object.entries(data || {})
+    .map(([key, value]) => ({
+      key,
+      label: labels[key] || key,
+      value: Number(value || 0),
+      totalCount: Number(value || 0),
+    }))
+    .filter((entry) => entry.value > 0)
+    .sort((left, right) => {
+      const leftRank = order.includes(left.key) ? order.indexOf(left.key) : 99;
+      const rightRank = order.includes(right.key) ? order.indexOf(right.key) : 99;
+      return leftRank - rightRank || right.value - left.value;
+    });
+}
+
+function dimensionEntries(slices = [], labels = {}) {
+  return (slices || [])
+    .map((slice) => ({
+      key: slice.key,
+      label: labels[slice.key] || slice.label || slice.key,
+      value: Number(slice.risk_count || 0),
+      totalCount: Number(slice.total_count || 0),
+      riskRate: Number(slice.risk_rate || 0),
+      stockoutCount: Number(slice.stockout_count || 0),
+      overstockCount: Number(slice.overstock_count || 0),
+      anomalyCount: Number(slice.anomaly_count || 0),
+      criticalCount: Number(slice.critical_count || 0),
+      highCount: Number(slice.high_count || 0),
+      mediumCount: Number(slice.medium_count || 0),
+      lowCount: Number(slice.low_count || 0),
+      normalCount: Number(slice.normal_count || 0),
+      disabled: slice.key === "__blank__",
+    }))
+    .filter((entry) => entry.value > 0);
+}
+
+function dimensionPieEntries(slices = [], labels = {}, preferredOrder = []) {
+  const orderIndex = new Map((preferredOrder || []).map((key, index) => [key, index]));
+  const entries = dimensionEntries(slices, labels).sort((left, right) => {
+    const leftRank = orderIndex.has(left.key) ? orderIndex.get(left.key) : 99;
+    const rightRank = orderIndex.has(right.key) ? orderIndex.get(right.key) : 99;
+    return leftRank - rightRank || right.value - left.value || String(left.label || "").localeCompare(String(right.label || ""), "zh-CN");
+  });
+  return compactPieEntries(entries, 7);
+}
+
+function dimensionRankingEntries(slices = [], labels = {}) {
+  return dimensionEntries(slices, labels).sort((left, right) => {
+    const valueRank = right.value - left.value;
+    if (valueRank) return valueRank;
+    return String(left.label || "").localeCompare(String(right.label || ""), "zh-CN");
+  });
+}
+
+function compactPieEntries(entries, limit) {
+  if (entries.length <= limit) return entries;
+  const head = entries.slice(0, Math.max(limit - 1, 1));
+  const tail = entries.slice(head.length);
+  return [
+    ...head,
+    {
+      key: "__other__",
+      label: "其他",
+      value: sumEntryField(tail, "value"),
+      totalCount: sumEntryField(tail, "totalCount"),
+      riskRate: 0,
+      stockoutCount: sumEntryField(tail, "stockoutCount"),
+      overstockCount: sumEntryField(tail, "overstockCount"),
+      anomalyCount: sumEntryField(tail, "anomalyCount"),
+      criticalCount: sumEntryField(tail, "criticalCount"),
+      highCount: sumEntryField(tail, "highCount"),
+      mediumCount: sumEntryField(tail, "mediumCount"),
+      lowCount: sumEntryField(tail, "lowCount"),
+      normalCount: sumEntryField(tail, "normalCount"),
+      disabled: true,
+    },
+  ];
+}
+
+function sumEntryField(entries, fieldName) {
+  return entries.reduce((sum, entry) => sum + Number(entry[fieldName] || 0), 0);
+}
+
+function riskChartColor(entry, index) {
+  return chartColorMap[entry.key] || chartPalette[index % chartPalette.length];
+}
+
+function riskRankingDetailText(entry, showRiskMix) {
+  if (!showRiskMix) return "";
+  const parts = [
+    `断 ${formatNumber(entry.stockoutCount || 0)}`,
+    `冗 ${formatNumber(entry.overstockCount || 0)}`,
+    `异 ${formatNumber(entry.anomalyCount || 0)}`,
+  ];
+  if (Number(entry.riskRate || 0) > 0) {
+    parts.push(`风险率 ${formatRatioPercent(entry.riskRate)}`);
+  }
+  return parts.join(" / ");
+}
+
+function riskPieBusinessTooltip(title, entry) {
+  const chartTitle = String(title || "");
+  if (chartTitle.includes("风险等级")) {
+    return RISK_LEVEL_ENTRY_TOOLTIPS[entry.key] || "";
+  }
+  if (chartTitle.includes("风险类型")) {
+    return RISK_TYPE_ENTRY_TOOLTIPS[entry.key] || "";
+  }
+  if (chartTitle.includes("爆旺平滞")) {
+    if (entry.key === "__blank__") {
+      return "未维护：销售属性为空，无法套用爆旺或平滞冗余阈值；先补维护销售属性。";
+    }
+    return formatOverstockRuleHintText(entry.key);
+  }
+  return "";
+}
+
+function riskPieEntryTooltip(title, entry, ratio, showRiskMix = false, ruleTooltip = "") {
+  const lines = [
+    `${title}：${entry.label}`,
+    `SKU数：${formatNumber(entry.value)}`,
+    `占比：${formatRatioPercent(ratio)}`,
+  ];
+  if (showRiskMix) {
+    lines.push(`构成：断货 ${formatNumber(entry.stockoutCount || 0)} / 冗余 ${formatNumber(entry.overstockCount || 0)} / 异常 ${formatNumber(entry.anomalyCount || 0)}`);
+    lines.push(`维度总SKU：${formatNumber(entry.totalCount || 0)}；真实风险率：${formatRatioPercent(entry.riskRate || 0)}`);
+  }
+  if (entry.disabled) {
+    lines.push("该项为汇总或未维护项，仅展示不下钻。");
+  }
+  const businessTooltip = riskPieBusinessTooltip(title, entry);
+  if (businessTooltip) {
+    lines.push("", businessTooltip);
+  } else if (ruleTooltip) {
+    lines.push("", ruleTooltip);
+  }
+  return lines.join("\n");
 }
 
 function SourcePanel({ summary }) {
@@ -691,190 +1499,470 @@ function SourcePanel({ summary }) {
   );
 }
 
-function FirstLegShipmentPanel({ initialQuery = "" }) {
-  const [query, setQuery] = useState(initialQuery || "");
-  const [latestOnly, setLatestOnly] = useState(true);
-  const [limit, setLimit] = useState(100);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [payload, setPayload] = useState(null);
-  const rows = payload?.shipments || [];
-
-  useEffect(() => {
-    if (!query && initialQuery) {
-      setQuery(initialQuery);
-    }
-  }, [initialQuery, query]);
-
-  const runSearch = async () => {
-    const materialCode = query.trim();
-    if (!materialCode) {
-      setError("请输入 SKU / MSKU / FNSKU / ASIN");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams();
-      params.set("material_code", materialCode);
-      params.set("latest_only", String(latestOnly));
-      params.set("limit", String(limit));
-      const response = await fetch(`${API_BASE_URL}/control-tower/first-leg-shipments?${params.toString()}`);
-      if (!response.ok) throw new Error(`头程查询失败 ${response.status}`);
-      setPayload(await response.json());
-    } catch (err) {
-      setPayload(null);
-      setError(err instanceof Error ? err.message : "头程查询失败");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    runSearch();
-  };
-
+function InventoryFlowPanel({ summary, items = [], loading = false, selectedStage = "", onStageSelect }) {
+  const flow = buildInventoryFlow(summary, items);
   return (
-    <section className="first-leg-section">
-      <div className="section-heading">
-        <div>
-          <h2>头程货件查询</h2>
-          <p>{payload ? `命中 ${formatNumber(payload.row_count)} 条货件记录` : "按产品身份码查询飞书头程货件"}</p>
-        </div>
-        <Ship size={20} />
+    <section className="inventory-flow-section">
+      <div className="inventory-flow-board" aria-busy={loading}>
+        <InventoryFlowStage
+          stageKey="local"
+          tone="local"
+          icon={Warehouse}
+          title="本地 / 供应商仓"
+          value={flow.domesticSupply}
+          helper="国内可发供给"
+          active={selectedStage === "local"}
+          onSelect={onStageSelect}
+          rows={[
+            ["本地仓", flow.localWarehouse],
+            ["供应商/备货", flow.stockUp],
+          ]}
+        />
+        <InventoryFlowArrow label="发运" />
+        <InventoryFlowStage
+          stageKey="transit"
+          tone="transit"
+          icon={Ship}
+          title="头程在途"
+          value={flow.inTransit}
+          helper="FNSKU 头程与入仓路上"
+          active={selectedStage === "transit"}
+          onSelect={onStageSelect}
+          rows={[
+            ["在途合计", flow.inTransit],
+            ["覆盖30天需求", flow.transitDemandCoverage],
+          ]}
+        />
+        <InventoryFlowArrow label="入仓" />
+        <InventoryFlowStage
+          stageKey="overseas"
+          tone="overseas"
+          icon={Boxes}
+          title="国外仓可售"
+          value={flow.overseasSellable}
+          helper="海外仓 + FBA 可售"
+          active={selectedStage === "overseas"}
+          onSelect={onStageSelect}
+          rows={[
+            ["海外仓", flow.overseasWarehouse],
+            ["FBA可售", flow.fbaSellable],
+          ]}
+        />
       </div>
-      <form className="first-leg-query" onSubmit={handleSubmit}>
-        <label className="input-wrap first-leg-search">
-          <Search size={16} />
-          <input
-            value={query}
-            placeholder="SKU / MSKU / FNSKU / ASIN"
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
-        <label className="toggle first-leg-toggle">
-          <input
-            type="checkbox"
-            checked={latestOnly}
-            onChange={(event) => setLatestOnly(event.target.checked)}
-          />
-          <span>最新快照</span>
-        </label>
-        <label className="input-wrap first-leg-limit">
-          <Database size={16} />
-          <input
-            type="number"
-            min="1"
-            max="500"
-            value={limit}
-            aria-label="返回行数"
-            onChange={(event) => setLimit(Math.max(1, Math.min(Number(event.target.value) || 1, 500)))}
-          />
-        </label>
-        <button className="primary-button" type="submit" disabled={loading}>
-          <Search size={16} />
-          <span>{loading ? "查询中" : "查询"}</span>
-        </button>
-      </form>
-      {error && (
-        <div className="notice error first-leg-notice">
-          <AlertTriangle size={18} />
-          <span>{error}</span>
-        </div>
-      )}
-      <div className="first-leg-summary">
-        <div>
-          <span>输入</span>
-          <strong>{payload?.query?.material_codes?.join(" / ") || query || "-"}</strong>
-        </div>
-        <div>
-          <span>返回</span>
-          <strong>{payload ? `${formatNumber(payload.row_count)} 条` : "-"}</strong>
-        </div>
-        <div>
-          <span>主链路</span>
-          <strong>ship_id = package_id</strong>
-        </div>
-      </div>
-      <FirstLegShipmentTable rows={rows} loading={loading} />
     </section>
   );
 }
 
-function FirstLegShipmentTable({ rows, loading }) {
+function InventoryFlowStage({ stageKey, tone, icon: Icon, title, value, helper, rows, active = false, onSelect }) {
+  const Component = onSelect ? "button" : "article";
+  const interactiveProps = onSelect
+    ? {
+        type: "button",
+        onClick: () => onSelect(stageKey),
+        "aria-pressed": active,
+      }
+    : {};
   return (
-    <div className="table-scroll first-leg-table-scroll">
-      <table className="first-leg-table">
-        <thead>
-          <tr>
-            <th>产品</th>
-            <th>货件</th>
-            <th>物流</th>
-            <th>数量</th>
-            <th>到港</th>
-            <th>签收</th>
-            <th>状态</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!rows.length && (
-            <tr className="empty-table-row">
-              <td colSpan={7}>{loading ? "正在查询头程货件..." : "暂无头程货件记录"}</td>
-            </tr>
-          )}
-          {rows.map((row, index) => (
-            <tr key={`${row.ship_id || row.package_id || row.refer_id || "shipment"}-${row.sku || row.fnsku || row.msku || index}-${index}`}>
-              <td>
-                <strong>{row.sku || "-"}</strong>
-                <small>{[row.msku, row.fnsku].filter(Boolean).join(" / ") || "-"}</small>
-              </td>
-              <td>
-                <strong>{row.ship_id || row.package_id || "-"}</strong>
-                <small>{row.batch_num || row.refer_id || row.warehouse_inbound_number || "-"}</small>
-                <span className="first-leg-source">{firstLegRelationLabel(row.source_relation)}</span>
-              </td>
-              <td>
-                <strong>{row.shipping_method || "-"}</strong>
-                <small>{row.logistics_provider || row.detail_logistics_provider || "-"}</small>
-                <small>{row.logistics_tracking_number || "-"}</small>
-              </td>
-              <td>
-                <span>发货 {formatNumber(row.ship_num)}</span>
-                <small>在途 {formatNumber(row.in_transit_qty)} / 签收 {formatNumber(row.quantity_received)}</small>
-              </td>
-              <td>
-                <span>预计 {formatDateOrDash(row.estimated_arrival_time)}</span>
-                <small>实际 {formatDateOrDash(row.actual_arrival_time)}</small>
-              </td>
-              <td>
-                <span>计划 {formatDateOrDash(row.plan_delivery_time)}</span>
-                <small>预计 {formatDateOrDash(row.estimated_delivery_time)}</small>
-                <small>实际 {formatDateOrDash(row.actual_delivery_time)}</small>
-              </td>
-              <td>
-                <strong>{row.current_shipping_status || row.detail_status || "-"}</strong>
-                <small>{row.exception || row.destination_warehouse || row.putaway_warehouse || "-"}</small>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <Component className={`inventory-flow-stage ${tone} ${active ? "active" : ""}`} {...interactiveProps}>
+      <div className="inventory-flow-stage-head">
+        <Icon size={21} />
+        <div>
+          <span>{title}</span>
+          <strong>{formatNumber(value)}</strong>
+        </div>
+      </div>
+      <p>{helper}</p>
+      <div className="inventory-flow-stage-meter">
+        <span style={{ width: `${flowMeterWidth(value, rows)}%` }} />
+      </div>
+    </Component>
+  );
+}
+
+function InventoryFlowArrow({ label }) {
+  return (
+    <div className="inventory-flow-arrow">
+      <span>{label}</span>
     </div>
   );
 }
 
-function MultiFilterField({ label, value, options, onChange, wide = false }) {
+const WAREHOUSE_STAGE_OPTIONS = [
+  { id: "local", label: "本地 / 供应商仓" },
+  { id: "transit", label: "头程在途" },
+  { id: "overseas", label: "国外仓可售" },
+];
+
+function WarehouseDetailPanel({ summary, activeStage, onStageChange }) {
+  const details = WAREHOUSE_STAGE_OPTIONS.map((option) => buildWarehouseStageDetail(summary, option.id));
+  const activeDetail = details.find((detail) => detail.id === activeStage) || details[0];
+  return (
+    <section className="warehouse-detail-section">
+      <div className="warehouse-detail-head">
+        <div>
+          <h2>仓库明细</h2>
+          <p>{activeDetail.subtitle}</p>
+        </div>
+        <div className="warehouse-stage-tabs" role="tablist" aria-label="仓库明细分组">
+          {details.map((detail) => (
+            <button
+              type="button"
+              className={`warehouse-stage-tab ${detail.id === activeDetail.id ? "active" : ""}`}
+              key={detail.id}
+              onClick={() => onStageChange(detail.id)}
+              role="tab"
+              aria-selected={detail.id === activeDetail.id}
+            >
+              <span>{detail.label}</span>
+              <strong>{detail.primaryValue}</strong>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="warehouse-detail-grid">
+        <div className="warehouse-metric-grid">
+          {activeDetail.metrics.map((metric) => (
+            <article className="warehouse-metric" key={metric.label}>
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              <small>{metric.helper}</small>
+            </article>
+          ))}
+        </div>
+        <div className="warehouse-source-panel">
+          <strong>底表口径</strong>
+          {activeDetail.sources.map((source) => (
+            <p key={source}>{source}</p>
+          ))}
+        </div>
+      </div>
+
+      <div className="warehouse-component-list">
+        {activeDetail.components.map((component) => (
+          <div key={component.field}>
+            <span>{component.label}</span>
+            <strong>{component.value}</strong>
+            <em>{component.field}</em>
+          </div>
+        ))}
+      </div>
+
+      <WarehouseInventoryTable rows={activeDetail.warehouseRows} title={activeDetail.tableTitle} />
+    </section>
+  );
+}
+
+function buildWarehouseStageDetail(summary, stage) {
+  const kpis = summary?.kpis || {};
+  const flow = buildInventoryFlow(summary);
+  const warehouseRows = Array.isArray(summary?.warehouse_inventory) ? summary.warehouse_inventory : [];
+  const fbaInbound = numericValue(kpis.afn_inbound_receiving_quantity) + numericValue(kpis.afn_inbound_working_quantity);
+  const warehouseOnway = numericValue(kpis.overseas_wh_product_onway) + numericValue(kpis.local_wh_product_onway);
+  const baseSources = [
+    "主宽表 ads_lingxing_all_warehouse_new 按当前筛选后的 FNSKU 聚合。",
+    "仓库表 dwd_lingxing_inventory_details + dwd_lingxing_sc_warehouse 提供仓库名称、可用、锁定和在途明细。",
+  ];
+
+  if (stage === "transit") {
+    return {
+      id: "transit",
+      label: "头程在途",
+      primaryValue: formatNumber(flow.inTransit),
+      subtitle: "在途合计 = FBA接收/工作 + 本地/海外发FBA在途 + 仓库在途 + 计划量。",
+      metrics: [
+        { label: "在途合计", value: formatNumber(flow.inTransit), helper: "全部在途与计划量" },
+        { label: "FBA接收/处理中", value: formatNumber(fbaInbound), helper: "receiving + working" },
+        { label: "仓库在途", value: formatNumber(warehouseOnway), helper: "海外仓/本地仓 onway" },
+        { label: "覆盖30天需求", value: formatCoverageDays(flow.inTransit, kpis.demand_30d), helper: "按30天需求折算" },
+      ],
+      components: [
+        warehouseComponent("FBA 接收中", "afn_inbound_receiving_quantity", kpis.afn_inbound_receiving_quantity),
+        warehouseComponent("FBA 处理中", "afn_inbound_working_quantity", kpis.afn_inbound_working_quantity),
+        warehouseComponent("海外仓发 FBA 在途", "oversease_afn_inbound_shipped_quantity", kpis.overseas_afn_inbound_shipped_quantity),
+        warehouseComponent("本地仓发 FBA 在途", "local_afn_inbound_shipped_quantity", kpis.local_afn_inbound_shipped_quantity),
+        warehouseComponent("海外仓在途", "overseas_wh_product_onway", kpis.overseas_wh_product_onway),
+        warehouseComponent("本地仓在途", "local_wh_product_onway", kpis.local_wh_product_onway),
+        warehouseComponent("计划量", "planned_quantity", kpis.planned_quantity),
+      ],
+      sources: baseSources,
+      tableTitle: "仓库在途明细",
+      warehouseRows: filterWarehouseRows(warehouseRows, "transit"),
+    };
+  }
+
+  if (stage === "overseas") {
+    return {
+      id: "overseas",
+      label: "国外仓可售",
+      primaryValue: formatNumber(flow.overseasSellable),
+      subtitle: "国外可售 = FBA可售 + 海外仓库存，用于判断当前国外端可卖和可补 FBA 能力。",
+      metrics: [
+        { label: "国外可售", value: formatNumber(flow.overseasSellable), helper: "FBA可售 + 海外仓" },
+        { label: "FBA 可售", value: formatNumber(flow.fbaSellable), helper: "afn_fulfillable_quantity" },
+        { label: "海外仓库存", value: formatNumber(flow.overseasWarehouse), helper: "overseas_warehouse_quantity" },
+        { label: "国外覆盖", value: formatCoverageDays(flow.overseasSellable, kpis.demand_30d), helper: "按30天需求折算" },
+      ],
+      components: [
+        warehouseComponent("FBA 可售", "afn_fulfillable_quantity", flow.fbaSellable),
+        warehouseComponent("FBA 库存", "fba_warehouse_quantity", flow.fbaInventory),
+        warehouseComponent("海外仓库存", "overseas_warehouse_quantity", flow.overseasWarehouse),
+        warehouseComponent("海外仓在途", "overseas_wh_product_onway", kpis.overseas_wh_product_onway),
+        warehouseComponent("海外仓发 FBA 在途", "oversease_afn_inbound_shipped_quantity", kpis.overseas_afn_inbound_shipped_quantity),
+      ],
+      sources: baseSources,
+      tableTitle: "国外仓库明细",
+      warehouseRows: filterWarehouseRows(warehouseRows, "overseas"),
+    };
+  }
+
+  return {
+    id: "local",
+    label: "本地 / 供应商仓",
+    primaryValue: formatNumber(flow.domesticSupply),
+    subtitle: "国内供给 = 本地仓库存 + 备货/供应商仓，是发运前可调拨供给。",
+    metrics: [
+      { label: "国内供给", value: formatNumber(flow.domesticSupply), helper: "本地仓 + 备货" },
+      { label: "本地仓", value: formatNumber(flow.localWarehouse), helper: "local_warehouse_quantity" },
+      { label: "备货/供应商仓", value: formatNumber(flow.stockUp), helper: "stock_up_num" },
+      { label: "覆盖30天需求", value: formatCoverageDays(flow.domesticSupply, kpis.demand_30d), helper: "按30天需求折算" },
+    ],
+    components: [
+      warehouseComponent("本地仓库存", "local_warehouse_quantity", flow.localWarehouse),
+      warehouseComponent("备货/供应商仓", "stock_up_num", flow.stockUp),
+      warehouseComponent("本地仓在途", "local_wh_product_onway", kpis.local_wh_product_onway),
+      warehouseComponent("本地仓发 FBA 在途", "local_afn_inbound_shipped_quantity", kpis.local_afn_inbound_shipped_quantity),
+    ],
+    sources: baseSources,
+    tableTitle: "本地仓库明细",
+    warehouseRows: filterWarehouseRows(warehouseRows, "local"),
+  };
+}
+
+function warehouseComponent(label, field, value) {
+  return {
+    label,
+    field,
+    value: formatNumber(value),
+  };
+}
+
+function filterWarehouseRows(rows, stage) {
+  const cleanRows = (rows || []).filter(Boolean);
+  if (stage === "transit") return cleanRows.filter((row) => numericValue(row.product_onway) > 0);
+  if (stage === "overseas") return cleanRows.filter((row) => !isLocalWarehouseRow(row));
+  return cleanRows.filter((row) => isLocalWarehouseRow(row));
+}
+
+function isLocalWarehouseRow(row) {
+  const countryCode = String(row?.country_code || "").trim().toUpperCase();
+  const text = [row?.country_name, row?.warehouse_name, row?.display_name, row?.warehouse_code].filter(Boolean).join(" ");
+  return countryCode === "CN" || /中国|国内|本地|深圳|义乌|东莞|广州|CN/i.test(text);
+}
+
+function WarehouseInventoryTable({ rows, title }) {
+  const sortedRows = [...(rows || [])].sort((a, b) => numericValue(b.product_total) - numericValue(a.product_total));
+  return (
+    <div className="warehouse-table-panel">
+      <div className="warehouse-table-head">
+        <strong>{title}</strong>
+        <span>{formatNumber(sortedRows.length)} 个仓库</span>
+      </div>
+      {sortedRows.length ? (
+        <div className="warehouse-table-wrap">
+          <table className="warehouse-table">
+            <thead>
+              <tr>
+                <th>仓库</th>
+                <th>国家</th>
+                <th>SKU</th>
+                <th>总库存</th>
+                <th>可用</th>
+                <th>锁定</th>
+                <th>在途</th>
+                <th>可用率</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedRows.slice(0, 20).map((row, index) => {
+                const total = numericValue(row.product_total);
+                const valid = numericValue(row.product_valid_num);
+                return (
+                  <tr key={`${row.warehouse_code || row.display_name || "warehouse"}-${index}`}>
+                    <td>
+                      <strong>{row.display_name || row.warehouse_name || row.warehouse_code || "-"}</strong>
+                      <small>{row.warehouse_code || row.warehouse_name || "-"}</small>
+                    </td>
+                    <td>{row.country_code || row.country_name || "-"}</td>
+                    <td>{formatNumber(row.sku_count)}</td>
+                    <td>{formatNumber(total)}</td>
+                    <td>{formatNumber(valid)}</td>
+                    <td>{formatNumber(row.product_lock_num)}</td>
+                    <td>{formatNumber(row.product_onway)}</td>
+                    <td>{total > 0 ? formatPercentValue(valid, total) : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="warehouse-empty">当前筛选下暂无可匹配的仓库明细，仍可参考上方主宽表聚合口径。</p>
+      )}
+    </div>
+  );
+}
+
+function SkuFirstLegSummary({ item, shipments = [], loading = false, error = "" }) {
+  const rows = Array.isArray(shipments) ? shipments : [];
+  const stats = rows.reduce(
+    (acc, row) => {
+      acc.shipped += numericValue(row.ship_num);
+      acc.received += numericValue(row.quantity_received);
+      acc.inTransit += firstLegArrivalQuantity(row);
+      const date = firstLegArrivalDate(row);
+      if (date) acc.arrivalDates.push(date);
+      return acc;
+    },
+    { shipped: 0, received: 0, inTransit: 0, arrivalDates: [] }
+  );
+  const nextArrival = stats.arrivalDates.sort()[0] || "";
+  const previewRows = rows.slice(0, 5);
+  return (
+    <div className="sku-first-leg-panel">
+      <div className="sku-first-leg-stats">
+        <div>
+          <span>FNSKU</span>
+          <strong>{item.fnsku || "-"}</strong>
+        </div>
+        <div>
+          <span>批次数</span>
+          <strong>{loading ? "读取中" : formatNumber(rows.length)}</strong>
+        </div>
+        <div>
+          <span>头程在途</span>
+          <strong>{formatNumber(stats.inTransit)}</strong>
+        </div>
+        <div>
+          <span>最近到货</span>
+          <strong>{formatDateOrDash(nextArrival)}</strong>
+        </div>
+      </div>
+      {error && <p className="sku-first-leg-error">{error}</p>}
+      {!loading && !error && rows.length === 0 && (
+        <p className="sku-first-leg-empty">当前 FNSKU 暂无头程批次记录。</p>
+      )}
+      {previewRows.length > 0 && (
+        <div className="sku-first-leg-batches">
+          {previewRows.map((row, index) => (
+            <div key={`${row.ship_id || row.package_id || row.refer_id || "shipment"}-${index}`}>
+              <span>{firstLegRelationLabel(row.source_relation)}</span>
+              <strong>{row.ship_id || row.package_id || row.batch_num || "-"}</strong>
+              <small>{formatNumber(firstLegArrivalQuantity(row))} 件 · {formatDateOrDash(firstLegArrivalDate(row))}</small>
+              <small>{row.current_shipping_status || row.detail_status || row.shipping_method || "-"}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function buildInventoryFlow(summary, items = []) {
+  const kpis = summary?.kpis || {};
+  const fallback = Array.isArray(items) ? items : [];
+  const sumField = (field) => fallback.reduce((total, item) => total + numericValue(item?.[field]), 0);
+  const totalInventory = numericOrFallback(kpis.total_inventory, sumField("total_inventory"));
+  const fbaInventory = numericOrFallback(kpis.fba_inventory, sumField("fba_inventory"));
+  const fbaSellable = numericOrFallback(kpis.fba_sellable, sumField("fba_sellable"));
+  const overseasWarehouse = numericOrFallback(kpis.overseas_inventory, sumField("overseas_inventory"));
+  const localWarehouse = numericOrFallback(kpis.local_inventory, sumField("local_inventory"));
+  const stockUpFallback = fallback.reduce((total, item) => {
+    const inferred = numericValue(item?.total_inventory)
+      - numericValue(item?.fba_inventory)
+      - numericValue(item?.overseas_inventory)
+      - numericValue(item?.local_inventory);
+    return total + Math.max(inferred, 0);
+  }, 0);
+  const stockUp = numericOrFallback(kpis.stock_up_inventory, stockUpFallback);
+  const domesticSupply = numericOrFallback(kpis.domestic_supply_inventory, localWarehouse + stockUp);
+  const inTransit = numericOrFallback(kpis.inbound_total, sumField("inbound_total"));
+  const overseasSellable = numericOrFallback(kpis.overseas_sellable_inventory, overseasWarehouse + fbaSellable);
+  const demand30d = numericOrFallback(kpis.demand_30d, sumField("demand_30d"));
+  const flowTotal = domesticSupply + inTransit + overseasSellable;
+  return {
+    skuCount: numericOrFallback(kpis.sku_count, fallback.length),
+    totalInventory,
+    fbaInventory,
+    fbaSellable,
+    overseasWarehouse,
+    localWarehouse,
+    stockUp,
+    domesticSupply,
+    inTransit,
+    overseasSellable,
+    demand30d,
+    transitShare: formatPercentValue(inTransit, flowTotal),
+    overseasShare: formatPercentValue(overseasSellable, flowTotal),
+    transitDemandCoverage: formatCoverageDays(inTransit, demand30d),
+    overseasDemandCoverage: formatCoverageDays(overseasSellable, demand30d),
+    stockSalesRatio: formatInventorySalesRatio(totalInventory, demand30d),
+  };
+}
+
+function flowMeterWidth(value, rows = []) {
+  const values = [value, ...rows.map(([, rowValue]) => rowValue)].map(numericValue).filter((item) => item > 0);
+  const max = Math.max(...values, 1);
+  return Math.max(8, Math.min(100, (numericValue(value) / max) * 100));
+}
+
+function numericValue(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : 0;
+}
+
+function numericOrFallback(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : numericValue(fallback);
+}
+
+function formatPercentValue(value, total) {
+  const numerator = numericValue(value);
+  const denominator = numericValue(total);
+  if (denominator <= 0) return "0%";
+  return `${formatNumber((numerator / denominator) * 100)}%`;
+}
+
+function formatCoverageDays(quantity, demand30d) {
+  const dailyDemand = numericValue(demand30d) / 30;
+  if (dailyDemand <= 0) return "-";
+  return `${formatNumber(numericValue(quantity) / dailyDemand)}天`;
+}
+
+function formatInventorySalesRatio(inventory, demand30d) {
+  const denominator = numericValue(demand30d);
+  if (denominator <= 0) return "-";
+  return `${formatNumber(numericValue(inventory) / denominator)}x`;
+}
+
+function MultiFilterField({ label, value, options, onChange, wide = false, fieldKey, openField, onOpenFieldChange }) {
   const selected = selectedValues(value);
+  const isControlledOpen = Boolean(fieldKey && onOpenFieldChange);
+  const isOpen = isControlledOpen ? openField === fieldKey : undefined;
   const normalizedOptions = (options || [])
     .map((option) => (typeof option === "string" ? { value: option, label: option } : option))
     .filter((option) => option?.value);
   const summary = selected.length
     ? `${selected.slice(0, 2).join("、")}${selected.length > 2 ? ` +${selected.length - 2}` : ""}`
     : "全部";
+  const toggleOpen = (event) => {
+    if (!isControlledOpen) return;
+    event.preventDefault();
+    onOpenFieldChange(isOpen ? null : fieldKey);
+  };
   return (
-    <details className={`filter-field multi-filter ${wide ? "wide" : ""}`}>
-      <summary>
+    <details className={`filter-field multi-filter ${wide ? "wide" : ""}`} open={isOpen}>
+      <summary onClick={toggleOpen}>
         <span>{label}</span>
         <strong>{summary}</strong>
       </summary>
@@ -927,6 +2015,7 @@ function InventoryTable({
   onOpenItem,
 }) {
   const [filterOpen, setFilterOpen] = useState(false);
+  const [openFilterField, setOpenFilterField] = useState(null);
   const [draftFilters, setDraftFilters] = useState(filters);
   const [filterPopoverStyle, setFilterPopoverStyle] = useState({});
   const filterButtonRef = useRef(null);
@@ -953,18 +2042,23 @@ function InventoryTable({
   useEffect(() => {
     if (!filterOpen) {
       setDraftFilters(filters);
+      setOpenFilterField(null);
     }
   }, [filters, filterOpen]);
   const updateDraftFilters = (changes) => setDraftFilters((current) => ({ ...current, ...changes }));
+  const closeFilterPopover = () => {
+    setFilterOpen(false);
+    setOpenFilterField(null);
+  };
   const applyDraftFilters = () => {
     onFiltersApply(draftFilters);
-    setFilterOpen(false);
+    closeFilterPopover();
   };
   const resetDraftFilters = () => {
     const nextFilters = createDefaultFilters();
     setDraftFilters(nextFilters);
     onFiltersApply(nextFilters);
-    setFilterOpen(false);
+    closeFilterPopover();
   };
   const positionFilterPopover = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -988,11 +2082,16 @@ function InventoryTable({
   const toggleFilterPopover = () => {
     setDraftFilters(filters);
     if (filterOpen) {
-      setFilterOpen(false);
+      closeFilterPopover();
       return;
     }
+    setOpenFilterField(null);
     positionFilterPopover();
     setFilterOpen(true);
+  };
+  const multiFilterOpenProps = {
+    openField: openFilterField,
+    onOpenFieldChange: setOpenFilterField,
   };
   return (
     <section className="table-section">
@@ -1018,14 +2117,14 @@ function InventoryTable({
               typeof document !== "undefined" &&
               createPortal(
                 <>
-                <button className="popover-dismiss-layer" type="button" aria-label="关闭筛选" onClick={() => setFilterOpen(false)} />
+                <button className="popover-dismiss-layer" type="button" aria-label="关闭筛选" onClick={closeFilterPopover} />
                 <div className="detail-filter-popover" role="dialog" aria-label="SKU 多条件筛选" style={filterPopoverStyle}>
                   <div className="filter-popover-head">
                     <div>
                       <strong>多条件筛选</strong>
                       <span>多个条件会同时生效</span>
                     </div>
-                    <button type="button" onClick={() => setFilterOpen(false)} aria-label="关闭">
+                    <button type="button" onClick={closeFilterPopover} aria-label="关闭">
                       ×
                     </button>
                   </div>
@@ -1036,7 +2135,7 @@ function InventoryTable({
                         <span>SKU、国家、店铺</span>
                       </div>
                       <div className="filter-section-grid">
-                        <label className="filter-field wide">
+                        <label className="filter-field">
                           <span>SKU / MSKU / FNSKU</span>
                           <input
                             value={draftFilters.material_code}
@@ -1044,9 +2143,9 @@ function InventoryTable({
                             onChange={(event) => updateDraftFilters({ material_code: event.target.value })}
                           />
                         </label>
-                        <MultiFilterField label="国家" value={draftFilters.country_code} options={countryOptions} onChange={(value) => updateDraftFilters({ country_code: value })} />
-                        <MultiFilterField label="发货国家" value={draftFilters.shipments_country} options={shipmentCountryOptions} onChange={(value) => updateDraftFilters({ shipments_country: value })} />
-                        <MultiFilterField label="店铺" value={draftFilters.store_name} options={storeOptions} onChange={(value) => updateDraftFilters({ store_name: value })} wide />
+                        <MultiFilterField fieldKey="country_code" label="国家" value={draftFilters.country_code} options={countryOptions} onChange={(value) => updateDraftFilters({ country_code: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="shipments_country" label="发货国家" value={draftFilters.shipments_country} options={shipmentCountryOptions} onChange={(value) => updateDraftFilters({ shipments_country: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="store_name" label="店铺" value={draftFilters.store_name} options={storeOptions} onChange={(value) => updateDraftFilters({ store_name: value })} {...multiFilterOpenProps} />
                       </div>
                     </section>
                     <section className="filter-section">
@@ -1055,9 +2154,9 @@ function InventoryTable({
                         <span>部门、人员</span>
                       </div>
                       <div className="filter-section-grid">
-                        <MultiFilterField label="销售部门" value={draftFilters.sales_department} options={salesDepartmentOptions} onChange={(value) => updateDraftFilters({ sales_department: value })} />
-                        <MultiFilterField label="销售员" value={draftFilters.salesman} options={salesmanOptions} onChange={(value) => updateDraftFilters({ salesman: value })} />
-                        <MultiFilterField label="产品经理" value={draftFilters.product_manager} options={productManagerOptions} onChange={(value) => updateDraftFilters({ product_manager: value })} />
+                        <MultiFilterField fieldKey="sales_department" label="销售部门" value={draftFilters.sales_department} options={salesDepartmentOptions} onChange={(value) => updateDraftFilters({ sales_department: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="salesman" label="销售员" value={draftFilters.salesman} options={salesmanOptions} onChange={(value) => updateDraftFilters({ salesman: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="product_manager" label="产品经理" value={draftFilters.product_manager} options={productManagerOptions} onChange={(value) => updateDraftFilters({ product_manager: value })} {...multiFilterOpenProps} />
                       </div>
                     </section>
                     <section className="filter-section">
@@ -1066,11 +2165,11 @@ function InventoryTable({
                         <span>属性、状态、生命周期</span>
                       </div>
                       <div className="filter-section-grid">
-                        <MultiFilterField label="销售属性" value={draftFilters.sales_property} options={SALES_PROPERTY_OPTIONS} onChange={(value) => updateDraftFilters({ sales_property: value })} />
-                        <MultiFilterField label="产品属性" value={draftFilters.product_property} options={productPropertyOptions} onChange={(value) => updateDraftFilters({ product_property: value })} />
-                        <MultiFilterField label="季节属性" value={draftFilters.seasonality} options={seasonalityOptions} onChange={(value) => updateDraftFilters({ seasonality: value })} />
-                        <MultiFilterField label="MSKU 状态" value={draftFilters.msku_status} options={mskuStatusOptions} onChange={(value) => updateDraftFilters({ msku_status: value })} />
-                        <MultiFilterField label="MSKU生命周期" value={draftFilters.msku_life_process} options={mskuLifeProcessOptions} onChange={(value) => updateDraftFilters({ msku_life_process: value })} />
+                        <MultiFilterField fieldKey="sales_property" label="销售属性" value={draftFilters.sales_property} options={SALES_PROPERTY_OPTIONS} onChange={(value) => updateDraftFilters({ sales_property: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="product_property" label="产品属性" value={draftFilters.product_property} options={productPropertyOptions} onChange={(value) => updateDraftFilters({ product_property: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="seasonality" label="季节属性" value={draftFilters.seasonality} options={seasonalityOptions} onChange={(value) => updateDraftFilters({ seasonality: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="msku_status" label="MSKU 状态" value={draftFilters.msku_status} options={mskuStatusOptions} onChange={(value) => updateDraftFilters({ msku_status: value })} {...multiFilterOpenProps} />
+                        <MultiFilterField fieldKey="msku_life_process" label="MSKU生命周期" value={draftFilters.msku_life_process} options={mskuLifeProcessOptions} onChange={(value) => updateDraftFilters({ msku_life_process: value })} {...multiFilterOpenProps} />
                       </div>
                     </section>
                     <section className="filter-section">
@@ -1079,7 +2178,7 @@ function InventoryTable({
                         <span>销量区间、风险口径</span>
                       </div>
                       <div className="filter-section-grid">
-                        <MultiFilterField label="风险类型" value={draftFilters.risk_type} options={RISK_TYPE_OPTIONS} onChange={(value) => updateDraftFilters({ risk_type: value })} />
+                        <MultiFilterField fieldKey="risk_type" label="风险类型" value={draftFilters.risk_type} options={RISK_TYPE_OPTIONS} onChange={(value) => updateDraftFilters({ risk_type: value })} {...multiFilterOpenProps} />
                         <label className="filter-field">
                           <span>销量开始</span>
                           <input
@@ -1317,9 +2416,9 @@ function InventoryStructureCell({ item }) {
   );
 }
 
-function Metric({ label, value, tone = "" }) {
+function Metric({ label, value, tone = "", tooltip = "" }) {
   return (
-    <div className={`metric-chip ${tone}`}>
+    <div className={`metric-chip ${tone}`} title={tooltip || undefined}>
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -1335,6 +2434,62 @@ function ActionSummaryCell({ onOpen }) {
       </button>
     </div>
   );
+}
+
+function RiskRuleHint({ item }) {
+  const overstockGroup = overstockRuleHintForSalesProperty(item?.sales_property);
+  const stockoutAssertion = formatStockoutAssertion(item);
+  const overstockAssertion = formatOverstockAssertion(item);
+  const assertions = [
+    stockoutAssertion ? { key: "stockout", text: stockoutAssertion, tooltip: STOCKOUT_RULE_TOOLTIP } : null,
+    overstockAssertion ? { key: "overstock", text: `${overstockGroup.label}冗余：${overstockAssertion}`, tooltip: overstockRuleTooltip(item?.sales_property) } : null,
+  ].filter(Boolean);
+  if (!assertions.length) return null;
+  return (
+    <div className="risk-rule-hint" aria-label="风险命中断言" title={assertions.map((assertion) => `${assertion.text}\n${assertion.tooltip}`).join("\n\n")}>
+      {assertions.map((assertion) => (
+        <span className={assertion.key} key={assertion.key} title={assertion.tooltip}>{assertion.text}</span>
+      ))}
+    </div>
+  );
+}
+
+function formatStockoutAssertion(item = {}) {
+  const evidence = item?.evidence || {};
+  const shortageDays = Number(evidence.stockout_shortage_days_0_45 || 0);
+  const futureHintDays = evidence.stockout_future_replenishment_hint_days;
+  const hasChazhi = Boolean(item?.pici_gap_values && Object.keys(item.pici_gap_values).length > 0);
+  const keyGap = item?.pici_key_gap || "-";
+  if (isActiveRiskLevel(item?.stockout_risk_level)) {
+    const firstText = formatPiciGap(item);
+    const warning = item.stockout_warning || riskBadgeLabel(stockoutRiskBadgeLabels, item.stockout_risk_level);
+    return `断货风险：命中${warning}，0-45天内 chazhi 负数 ${formatNumber(shortageDays)} 天，${firstText}，关键缺口 ${keyGap}`;
+  }
+  if (futureHintDays !== null && futureHintDays !== undefined && futureHintDays !== "") {
+    return `断货风险：未命中0-45天断货；第 ${formatNumber(futureHintDays)} 天后 chazhi 为负，仅作为补货提示，关键缺口 ${keyGap}`;
+  }
+  if (hasChazhi) return "";
+  return "";
+}
+
+function formatOverstockAssertion(item = {}) {
+  const warning = item?.overstock_warning || riskBadgeLabel(overstockRiskBadgeLabels, item?.overstock_risk_level || "normal");
+  const reason = item?.evidence?.overstock_reason;
+  if (isActiveRiskLevel(item?.overstock_risk_level)) {
+    const action = extractOverstockActionAssertion(item);
+    return `命中${warning}${reason ? `，${reason}` : ""}${action ? `；处理断言：${action}` : ""}`;
+  }
+  return "";
+}
+
+function extractOverstockActionAssertion(item = {}) {
+  const text = String(item?.suggested_action || "");
+  const match = text.match(/冗余：(.+?)(?:；异常：|。$|$)/);
+  return match ? match[1].replace(/^按 SOP 冗余处理：/, "") : "";
+}
+
+function isActiveRiskLevel(level) {
+  return ["critical", "high", "medium", "low"].includes(level);
 }
 
 function ActionDetailDialog({ item, onClose }) {
@@ -1409,7 +2564,7 @@ function ActionDetailDialog({ item, onClose }) {
     return () => {
       cancelled = true;
     };
-  }, [item.material_code, item.msku, item.fnsku, item.asin]);
+  }, [item.fnsku]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1468,13 +2623,14 @@ function ActionDetailDialog({ item, onClose }) {
     }
   };
 
-  const runMonthlyForecastReview = async () => {
+  const runMonthlyForecastReview = async (options = {}) => {
     if (forecastReviewLoading) return;
     setForecastReviewLoading(true);
     setForecastReviewError("");
     try {
       const params = new URLSearchParams();
       params.set("month_offset", "2");
+      if (options.refresh) params.set("refresh", "true");
       [
         ["material_code", item.material_code],
         ["msku", item.msku],
@@ -1485,7 +2641,7 @@ function ActionDetailDialog({ item, onClose }) {
       ].forEach(([key, value]) => {
         if (value) params.set(key, value);
       });
-      const response = await fetch(`${API_BASE_URL}/control-tower/monthly-forecast-review?${params.toString()}`);
+      const response = await apiFetch(`${API_BASE_URL}/control-tower/monthly-forecast-review?${params.toString()}`);
       if (!response.ok) throw new Error(`复盘失败 ${response.status}`);
       setForecastReview(await response.json());
     } catch (error) {
@@ -1547,8 +2703,14 @@ function ActionDetailDialog({ item, onClose }) {
         <div className="drawer-head">
           <div>
             <span>FNSKU 工作台</span>
-            <strong>{item.fnsku || item.material_code}</strong>
-            <p>{item.sku_name || item.msku || item.fnsku || "-"}</p>
+            <div className="drawer-title-line">
+              <strong>{item.fnsku || item.material_code}</strong>
+              {item.sales_property && <span className={`sales-property ${salesPropertyClass(item.sales_property)}`}>{item.sales_property}</span>}
+            </div>
+            <div className="drawer-subtitle-line">
+              <p>{item.sku_name || item.msku || item.fnsku || "-"}</p>
+              <RiskRuleHint item={item} />
+            </div>
           </div>
           <button type="button" onClick={onClose} aria-label="关闭条目详情">
             ×
@@ -1629,14 +2791,14 @@ function SkuDetailPanel({
   shippingCostError,
   onForecastReview,
 }) {
-  const [supplySimulation, setSupplySimulation] = useState(createEmptySupplySimulation());
+  const [supplySimulation, setSupplySimulation] = useState(() => createEmptySupplySimulation(item));
   const [forecastDetailOpen, setForecastDetailOpen] = useState(false);
   const [arrivalSourceMode, setArrivalSourceMode] = useState("pici");
   useEffect(() => {
-    setSupplySimulation(createEmptySupplySimulation());
+    setSupplySimulation(createEmptySupplySimulation(item));
     setForecastDetailOpen(false);
     setArrivalSourceMode("pici");
-  }, [item.material_code, item.msku, item.fnsku, item.asin, item.store_name, item.country_code]);
+  }, [item.material_code, item.msku, item.fnsku, item.asin, item.store_name, item.country_code, item.sales_property]);
 
   const firstLegArrivals = useMemo(
     () => buildFirstLegArrivalBatches(firstLegShipments, item),
@@ -1652,8 +2814,15 @@ function SkuDetailPanel({
     () => piciShortageWindowSummary(item, supplySimulation, supplySummaryOptions),
     [item, supplySimulation, supplySummaryOptions]
   );
+  const safetyStockDays = safetyStockDaysForSimulation(supplySimulation, item);
   const standardSalesControlPlan = useMemo(
-    () => buildSalesControlPlan(item, { id: "standard", targetLimitDay: 45, summaryOptions: supplySummaryOptions }),
+    () => buildSalesControlPlan(item, {
+      id: "standard",
+      targetLimitDay: 45,
+      title: "爆旺控销策略",
+      actionLabel: "填入爆旺控销策略",
+      summaryOptions: supplySummaryOptions,
+    }),
     [item, supplySummaryOptions]
   );
   const flatSlowSalesControlPlan = useMemo(() => {
@@ -1668,11 +2837,12 @@ function SkuDetailPanel({
       summaryOptions: supplySummaryOptions,
     });
     const planSimulation = simulationForSalesControlSegments(plan.segments);
+    const planSummary = piciShortageWindowSummary(item, planSimulation, supplySummaryOptions);
     return {
       ...plan,
-      slowReplenishmentPlan: piciShortageWindowSummary(item, planSimulation, supplySummaryOptions).slowReplenishmentWindow,
+      slowReplenishmentPlan: summarizeSlowShipWindowBeforeSafetyEnd(item, planSummary.days, safetyStockDays),
     };
-  }, [item, supplySummaryOptions]);
+  }, [item, supplySummaryOptions, safetyStockDays]);
   const salesControlPlans = useMemo(() => {
     if (!flatSlowSalesControlPlan) return [standardSalesControlPlan];
     return [
@@ -1700,10 +2870,13 @@ function SkuDetailPanel({
     () => piciShortageWindowSummary(item, simulationWithoutChannels(supplySimulation, ["fast_ship", "slow_ship"]), supplySummaryOptions).fastReplenishmentWindow,
     [item, supplySimulation, supplySummaryOptions]
   );
-  const slowReplenishmentPlan = useMemo(
-    () => piciShortageWindowSummary(item, simulationWithoutChannels(supplySimulation, ["slow_ship"]), supplySummaryOptions).slowReplenishmentWindow,
-    [item, supplySimulation, supplySummaryOptions]
-  );
+  const slowReplenishmentPlan = useMemo(() => {
+    const slowSummary = piciShortageWindowSummary(item, simulationWithoutChannels(supplySimulation, ["slow_ship"]), supplySummaryOptions);
+    if (supplySimulation?.strategyMode === "slow_ship_only") {
+      return summarizeSlowShipWindowBeforeSafetyEnd(item, slowSummary.days, safetyStockDays);
+    }
+    return slowSummary.slowReplenishmentWindow;
+  }, [item, supplySimulation, supplySummaryOptions, safetyStockDays]);
   const replenishmentPlans = {
     urgent_air: urgentAirReplenishmentPlan,
     standard_air: standardAirReplenishmentPlan,
@@ -1713,30 +2886,53 @@ function SkuDetailPanel({
   const applySalesControlPlan = (planId = "standard") => {
     const selectedPlan = salesControlPlans.find((plan) => plan.id === planId) || salesControlPlans[0];
     const slowSuggestedQuantity = selectedPlan?.slowReplenishmentPlan?.suggestedQuantity || 0;
-    if (!selectedPlan?.segments?.length && !slowSuggestedQuantity) return;
-    setSupplySimulation((current) => ({
-      ...createEmptySupplySimulation(),
-      ...(current || {}),
-      strategyMode: selectedPlan.replenishmentMode === "slow_ship_only" ? "slow_ship_only" : "",
-      salesControl: { ...createEmptySupplySimulation().salesControl },
-      salesControls: (selectedPlan.segments || []).map((segment) => ({
-        startDay: String(segment.startDay),
-        endDay: String(segment.endDay),
-        controlRatio: String(segment.controlRatio),
-      })),
-      ...(selectedPlan.replenishmentMode === "slow_ship_only"
-        ? {
-            urgent_air: { ...createEmptySupplySimulation().urgent_air },
-            standard_air: { ...createEmptySupplySimulation().standard_air },
-            fast_ship: { ...createEmptySupplySimulation().fast_ship },
-            slow_ship: {
-              ...createEmptySupplySimulation().slow_ship,
-              ...((current || {}).slow_ship || {}),
-              replenishQuantity: slowSuggestedQuantity ? String(slowSuggestedQuantity) : "",
-            },
-          }
-        : {}),
-    }));
+    const standardShipPlans = standardShipPlansAfterSalesControl(item, supplySimulation, selectedPlan, supplySummaryOptions);
+    const fastSuggestedQuantity = standardShipPlans.fast_ship?.suggestedQuantity || 0;
+    const standardSlowSuggestedQuantity = standardShipPlans.slow_ship?.suggestedQuantity || 0;
+    if (!selectedPlan?.segments?.length && !slowSuggestedQuantity && !fastSuggestedQuantity && !standardSlowSuggestedQuantity) return;
+    setSupplySimulation((current) => {
+      const empty = createEmptySupplySimulation();
+      const plannedSimulation = simulationForSalesControlPlan(current, selectedPlan);
+      const nextStandardShipPlans = standardShipPlansAfterSalesControl(item, current, selectedPlan, supplySummaryOptions);
+      const nextFastSuggestedQuantity = nextStandardShipPlans.fast_ship?.suggestedQuantity || 0;
+      const nextStandardSlowSuggestedQuantity = nextStandardShipPlans.slow_ship?.suggestedQuantity || 0;
+      return {
+        ...plannedSimulation,
+        ...(selectedPlan.replenishmentMode === "slow_ship_only"
+          ? {
+              urgent_air: { ...empty.urgent_air },
+              standard_air: { ...empty.standard_air },
+              fast_ship: { ...empty.fast_ship },
+              slow_ship: {
+                ...empty.slow_ship,
+                ...((current || {}).slow_ship || {}),
+                replenishQuantity: slowSuggestedQuantity ? String(slowSuggestedQuantity) : "",
+              },
+            }
+          : nextFastSuggestedQuantity || nextStandardSlowSuggestedQuantity
+            ? {
+                ...(nextFastSuggestedQuantity
+                  ? {
+                      fast_ship: {
+                        ...empty.fast_ship,
+                        ...((current || {}).fast_ship || {}),
+                        replenishQuantity: String(nextFastSuggestedQuantity),
+                      },
+                    }
+                  : {}),
+                ...(nextStandardSlowSuggestedQuantity
+                  ? {
+                      slow_ship: {
+                        ...empty.slow_ship,
+                        ...((current || {}).slow_ship || {}),
+                        replenishQuantity: String(nextStandardSlowSuggestedQuantity),
+                      },
+                    }
+                  : {}),
+              }
+            : {}),
+      };
+    });
   };
   const applyReplenishmentPlan = (channel) => {
     if (supplySimulation?.strategyMode === "slow_ship_only" && channel !== "slow_ship") return;
@@ -1751,13 +2947,12 @@ function SkuDetailPanel({
       },
     }));
   };
-
   return (
     <>
           <div className="detail-kpis">
-            <Metric label="风险" value={riskLabels[item.risk_level] || item.risk_level || "-"} />
-            <Metric label="断货" value={formatNumber(simulatedShortageSummary.totalDays) + "天"} tone="warn" />
-            <Metric label="预计7天" value={formatNumber(item.projected_7d)} tone={item.projected_7d < 0 ? "danger" : ""} />
+            <Metric label="风险" value={riskLabels[item.risk_level] || item.risk_level || "-"} tooltip={RISK_LEVEL_RULE_TOOLTIP} />
+            <Metric label="断货" value={formatNumber(simulatedShortageSummary.totalDays) + "天"} tone="warn" tooltip={STOCKOUT_RULE_TOOLTIP} />
+            <Metric label="预计7天" value={formatNumber(item.projected_7d)} tone={item.projected_7d < 0 ? "danger" : ""} tooltip="预计7天=FBA可售库存-未来7天需求；小于0说明短期覆盖不足。" />
           </div>
 
           <DetailSection title="基础信息">
@@ -1778,31 +2973,42 @@ function SkuDetailPanel({
                 ["季节属性", item.seasonality],
                 ["MSKU状态", item.msku_status],
                 ["MSKU生命周期", item.msku_life_process],
+                ["物流模式", item.logistics_model],
+                ["头程渠道", item.first_leg_logistics_channel],
               ]}
             />
           </DetailSection>
 
-          <DetailSection title="风险判断">
+          <DetailSection title="风险判断" tooltip={RISK_LEVEL_RULE_TOOLTIP}>
             <DetailGrid
               rows={[
-                ["风险类型", riskTypeLabels[item.risk_type] || item.risk_type],
-                ["整体等级", riskLabels[item.risk_level] || item.risk_level],
-                ["断货等级", riskLabels[item.stockout_risk_level] || item.stockout_risk_level],
-                ["冗余等级", riskLabels[item.overstock_risk_level] || item.overstock_risk_level],
-                ["风险分", item.risk_score],
-                ["提示", item.warning_type],
+                ["风险类型", riskTypeLabels[item.risk_type] || item.risk_type, `${RISK_TYPE_RULE_TOOLTIP}\n${ANOMALY_RULE_TOOLTIP}`],
+                ["处理等级", riskLabels[item.risk_level] || item.risk_level, RISK_LEVEL_RULE_TOOLTIP],
+                ["断货等级", riskLabels[item.stockout_risk_level] || item.stockout_risk_level, STOCKOUT_RULE_TOOLTIP],
+                ["冗余等级", riskLabels[item.overstock_risk_level] || item.overstock_risk_level, overstockRuleTooltip(item.sales_property)],
+                ["提示", item.warning_type, WARNING_TYPE_RULE_TOOLTIP],
               ]}
             />
           </DetailSection>
+          {riskFlags.length > 0 && (
+            <DetailSection title="库存异常" tooltip={ANOMALY_RULE_TOOLTIP}>
+              <DetailGrid
+                rows={riskFlags.map((flag, index) => {
+                  const normalized = normalizeRiskFlag(flag, index);
+                  return [normalized.label, normalized.reason, ANOMALY_RULE_TOOLTIP];
+                })}
+              />
+            </DetailSection>
+          )}
 
-          <DetailSection title="断货明细">
+          <DetailSection title="断货明细" tooltip={STOCKOUT_RULE_TOOLTIP}>
             <DetailGrid
               rows={[
-                ["最早断货", formatPiciGap(item)],
-                ["原始断货", `${formatNumber(shortageSummary.totalDays)} 天`],
-                ["模拟断货", `${formatNumber(simulatedShortageSummary.totalDays)} 天`],
-                ["最大缺口", formatNumber(item.pici_min_gap_quantity)],
-                ["关键缺口", item.pici_key_gap],
+                ["最早断货", formatPiciGap(item), "按 chazhi 批次差值找到最早为负的时间点。"],
+                ["原始断货", `${formatNumber(shortageSummary.totalDays)} 天`, STOCKOUT_RULE_TOOLTIP],
+                ["模拟断货", `${formatNumber(simulatedShortageSummary.totalDays)} 天`, `${STOCKOUT_RULE_TOOLTIP}\n${SUPPLY_CONTROL_RULE_TOOLTIP}`],
+                ["最大缺口", formatNumber(item.pici_min_gap_quantity), "0-45天窗口内最深的 chazhi 负缺口。"],
+                ["关键缺口", item.pici_key_gap, "优先取最早断货点缺口；无断货时取最后一个批次差值。"],
               ]}
             />
             <SupplyFishboneChart
@@ -1826,13 +3032,13 @@ function SkuDetailPanel({
             <div className="pici-list">
               {piciEntries.length > 0 ? (
                 piciEntries.map(([key, value]) => (
-                  <div key={key}>
+                  <div key={key} title={STOCKOUT_RULE_TOOLTIP}>
                     <span>{key.replace("_", "-")}天</span>
                     <strong>{value}</strong>
                   </div>
                 ))
               ) : (
-                <div>
+                <div title="缺少 chazhi 批次差值时，断货判断需要人工复核。">
                   <span>chazhi</span>
                   <strong>无数据</strong>
                 </div>
@@ -1840,34 +3046,31 @@ function SkuDetailPanel({
             </div>
           </DetailSection>
 
-          <DetailSection title="库存结构">
+          <DetailSection title="库存结构" tooltip={INVENTORY_STRUCTURE_RULE_TOOLTIP}>
             <DetailGrid
               rows={[
-                ["总库存", formatNumber(item.total_inventory)],
-                ["FBA可售", formatNumber(item.fba_sellable)],
-                ["FBA库存", formatNumber(item.fba_inventory)],
-                ["海外仓", formatNumber(item.overseas_inventory)],
-                ["本地仓", formatNumber(item.local_inventory)],
-                ["在途合计", formatNumber(item.inbound_total)],
-                ["FBA覆盖", `${item.sellable_days ?? "-"} 天`],
-                ["提前期", `${formatNumber(item.lead_time_days)} 天`],
+                ["总库存", formatNumber(item.total_inventory), "总库存=FBA库存+海外仓库存+本地仓库存+备货。"],
+                ["FBA可售", formatNumber(item.fba_sellable), "FBA前端可售库存，是断货覆盖判断的核心库存。"],
+                ["FBA库存", formatNumber(item.fba_inventory), "用于冗余可售天数1和库存结构判断。"],
+                ["海外仓", formatNumber(item.overseas_inventory), "用于冗余可售天数3/4和补货覆盖判断。"],
+                ["本地仓", formatNumber(item.local_inventory), "用于冗余可售天数5/6和采购前库存判断。"],
+                ["在途合计", formatNumber(item.inbound_total), "包含FBA接收/工作、海外/本地在途、仓库在途和计划量。"],
+                ["FBA覆盖", `${item.sellable_days ?? "-"} 天`, "优先使用底表FBA可售天数；缺失时用FBA库存/日需求估算。"],
+                ["提前期", `${formatNumber(item.lead_time_days)} 天`, "补货倒计时和采购建议的交期参考。"],
               ]}
             />
           </DetailSection>
 
-          <DetailSection title="需求与销量">
-            <DetailGrid
-              rows={[
-                ["区间销量", formatNumber(item.daily_sales_volume)],
-                ["7天需求", formatNumber(item.demand_7d)],
-                ["30天需求", formatNumber(item.demand_30d)],
-                ["日均需求", formatNumber(item.daily_demand)],
-                ["预计7天库存", formatNumber(item.projected_7d)],
-              ]}
+          <DetailSection title="头程批次" tooltip="头程批次按当前 FNSKU 查询，用于判断在途是否能覆盖断货窗口。">
+            <SkuFirstLegSummary
+              item={item}
+              shipments={firstLegShipments}
+              loading={firstLegLoading}
+              error={firstLegError}
             />
           </DetailSection>
 
-          <DetailSection title="月度预测复盘">
+          <DetailSection title="月度预测复盘" tooltip={FORECAST_RULE_TOOLTIP}>
             <div className="forecast-review-head">
               <div>
                 <strong>
@@ -1883,7 +3086,7 @@ function SkuDetailPanel({
                     <span>详情图</span>
                   </button>
                 )}
-                <button type="button" onClick={onForecastReview} disabled={forecastReviewLoading}>
+                <button type="button" onClick={() => onForecastReview({ refresh: true })} disabled={forecastReviewLoading}>
                   <RefreshCw size={15} />
                   <span>{forecastReviewLoading ? "复盘中" : "手动复盘"}</span>
                 </button>
@@ -1955,46 +3158,36 @@ function SkuDetailPanel({
             />
           )}
 
-          <DetailSection title="冗余依据">
+          <DetailSection title="冗余依据" tooltip={overstockRuleTooltip(item.sales_property)}>
             <DetailGrid
               rows={[
-                ["FBA可售天数", formatDays(item.redundancy_sellable_days?.sellable_1)],
-                ["FBA+在途天数", formatDays(item.redundancy_sellable_days?.sellable_2)],
-                ["海外仓天数", formatDays(item.redundancy_sellable_days?.sellable_3)],
-                ["海外+在途天数", formatDays(item.redundancy_sellable_days?.sellable_4)],
-                ["本地仓天数", formatDays(item.redundancy_sellable_days?.sellable_5)],
-                ["全链路天数", formatDays(item.redundancy_sellable_days?.sellable_6)],
-                ["冗余原因", item.evidence?.overstock_reason],
+                ["FBA可售天数", formatDays(item.redundancy_sellable_days?.sellable_1), overstockSellableRuleTooltip(item.sales_property, "sellable_1")],
+                ["FBA+在途天数", formatDays(item.redundancy_sellable_days?.sellable_2), overstockSellableRuleTooltip(item.sales_property, "sellable_2")],
+                ["海外仓天数", formatDays(item.redundancy_sellable_days?.sellable_3), overstockSellableRuleTooltip(item.sales_property, "sellable_3")],
+                ["海外+在途天数", formatDays(item.redundancy_sellable_days?.sellable_4), overstockSellableRuleTooltip(item.sales_property, "sellable_4")],
+                ["本地仓天数", formatDays(item.redundancy_sellable_days?.sellable_5), overstockSellableRuleTooltip(item.sales_property, "sellable_5")],
+                ["全链路天数", formatDays(item.redundancy_sellable_days?.sellable_6), overstockSellableRuleTooltip(item.sales_property, "sellable_6")],
+                ["冗余原因", item.evidence?.overstock_reason, "只展示实际命中的可售天数或库龄冗余断言；未命中则不写。"],
               ]}
             />
           </DetailSection>
 
-          <DetailSection title="库龄">
+          <DetailSection title="库龄" tooltip={AGE_RULE_TOOLTIP}>
             <DetailGrid
               rows={[
-                ["61-90天", formatNumber(item.fba_age_61_to_90)],
-                ["91-180天", formatNumber(item.fba_age_91_to_180)],
-                ["181-270天", formatNumber(item.fba_age_181_to_270)],
-                ["271-330天", formatNumber(item.fba_age_271_to_330)],
-                ["331-365天", formatNumber(item.fba_age_331_to_365)],
-                ["365天+", formatNumber(item.fba_age_365_plus)],
-                ["长库龄合计", formatNumber(item.long_age_inventory)],
-                ["长库龄占比", item.fba_long_age_ratio === null || item.fba_long_age_ratio === undefined ? "-" : `${formatNumber(item.fba_long_age_ratio * 100)}%`],
+                ["61-90天", formatNumber(item.fba_age_61_to_90), AGE_ROW_RULE_TOOLTIPS["61-90天"]],
+                ["91-180天", formatNumber(item.fba_age_91_to_180), AGE_ROW_RULE_TOOLTIPS["91-180天"]],
+                ["181-270天", formatNumber(item.fba_age_181_to_270), AGE_ROW_RULE_TOOLTIPS["181-270天"]],
+                ["271-330天", formatNumber(item.fba_age_271_to_330), AGE_ROW_RULE_TOOLTIPS["271-330天"]],
+                ["331-365天", formatNumber(item.fba_age_331_to_365), AGE_ROW_RULE_TOOLTIPS["331-365天"]],
+                ["365天+", formatNumber(item.fba_age_365_plus), AGE_ROW_RULE_TOOLTIPS["365天+"]],
+                ["长库龄合计", formatNumber(item.long_age_inventory), AGE_RULE_TOOLTIP],
+                ["长库龄占比", item.fba_long_age_ratio === null || item.fba_long_age_ratio === undefined ? "-" : `${formatNumber(item.fba_long_age_ratio * 100)}%`, AGE_RULE_TOOLTIP],
               ]}
             />
           </DetailSection>
 
-          <DetailSection title="补货成本估算">
-            <ReplenishmentCostEstimate
-              estimate={shippingCostEstimate}
-              loading={shippingCostLoading}
-              error={shippingCostError}
-              urgentAirReplenishmentPlan={urgentAirReplenishmentPlan}
-              standardAirReplenishmentPlan={standardAirReplenishmentPlan}
-            />
-          </DetailSection>
-
-          <DetailSection title="建议动作">
+          <DetailSection title="建议动作" tooltip={`${overstockRuleTooltip(item.sales_property)}\n${SUPPLY_CONTROL_RULE_TOOLTIP}`}>
             <div className="action-list empty" aria-label="建议动作待填写" />
           </DetailSection>
     </>
@@ -2026,7 +3219,8 @@ function SupplyFishboneChart({
       </div>
     );
   }
-  const displayWeeks = annotateSupplyWeeksForShippingPolicy(weeks, item);
+  const safetyStockDays = safetyStockDaysForSimulation(simulation, item);
+  const displayWeeks = annotateSupplyWeeksForShippingPolicy(weeks, item, safetyStockDays);
   const rows = chunkArray(displayWeeks, 5);
   const costByArrivalDay = shippingCostByArrivalDay(shippingCostEstimate);
   const costByChannel = shippingCostByChannel(shippingCostEstimate);
@@ -2037,6 +3231,7 @@ function SupplyFishboneChart({
   return (
     <div className="supply-fishbone" aria-label="周维度供货断货鱼骨图">
       <SupplySimulatorControls
+        item={item}
         simulation={simulation}
         onSimulationChange={onSimulationChange}
         costByChannel={costByChannel}
@@ -2080,8 +3275,8 @@ function SupplyFishboneChart({
         <span className="shortage">断货</span>
         <span className="sim-replenish">补货覆盖</span>
         <span className="control">控销覆盖</span>
-        <span className="no-ship">阈值后不发货</span>
-        <span className="post-threshold-goods">阈值后仍有货</span>
+        <span className="safety-stock">安全库存{formatNumber(safetyStockDays)}天</span>
+        <span className="post-threshold-goods">安全库存后仍有货</span>
         <span className="arrival">到货</span>
         {isFirstLegMode && <span className="first-leg-arrival">头程批次</span>}
       </div>
@@ -2151,6 +3346,7 @@ function SupplyFishboneChart({
 }
 
 function SupplySimulatorControls({
+  item,
   simulation,
   onSimulationChange,
   costByChannel,
@@ -2207,14 +3403,38 @@ function SupplySimulatorControls({
   const suggestedStandardAirCost = standardAirCost ? suggestedStandardAirQuantity * Number(standardAirCost.unit_shipping_cost_cny || 0) : null;
   const controlPlans = (salesControlPlans || []).filter(Boolean);
   const slowCost = costByChannel.get("slow_ship");
+  const baselineChannel = baselineShippingChannelForItem(item);
+  const baselineCost = baselineChannel ? costByChannel.get(baselineChannel) : null;
   const slowShipOnlyMode = simulation?.strategyMode === "slow_ship_only";
   const activeControlPercentText = formatControlRowsPercentText(salesControlRows);
+  const controlQuantitySummary = buildSalesControlQuantitySummary(item, simulation, salesControlRows);
+  const safetyStockDays = safetyStockDaysForSimulation(simulation, item);
+  const updateSafetyStockDays = (value) => {
+    onSimulationChange((current) => ({
+      ...createEmptySupplySimulation(item),
+      ...(current || {}),
+      safetyStockDays: value,
+    }));
+  };
 
   return (
     <div className="supply-simulator">
       <div className="supply-simulator-head">
         <strong>补货模拟 / 独立控销</strong>
-        <span>原始 {formatNumber(baseTotalDays)} 天 · 模拟 {formatNumber(simulatedTotalDays)} 天</span>
+        <div className="supply-simulator-head-actions">
+          <label className="supply-safety-stock-control">
+            <span>安全库存</span>
+            <input
+              min="0"
+              step="1"
+              type="number"
+              value={simulation?.safetyStockDays ?? String(safetyStockDays)}
+              onChange={(event) => updateSafetyStockDays(event.target.value)}
+            />
+            <small>天</small>
+          </label>
+          <span>原始 {formatNumber(baseTotalDays)} 天 · 模拟 {formatNumber(simulatedTotalDays)} 天</span>
+        </div>
       </div>
       {controlPlans.map((plan) => {
         const salesControlSegments = plan?.segments || [];
@@ -2224,9 +3444,12 @@ function SupplySimulatorControls({
         const controlPlanName = plan?.title || (plan?.strategy === "balanced" ? "提前平滑控销" : "多段控销填入");
         const controlPlanActionName = plan?.actionLabel || (plan?.strategy === "balanced" ? "填入平滑控销" : "填入多段控销");
         const controlPlanNote = plan?.strategy === "balanced" ? `提前均摊后${formatNumber(targetLimitDay)}天前不断货` : `可控段填入后${formatNumber(targetLimitDay)}天前不断货`;
+        const slowShipPolicyWindowText = `第${formatNumber(SLOW_SHIP_REPLENISHMENT_START_DAY)}-${formatNumber(shippingPolicyForItem(item).cutoffDay)}天`;
         const slowSuggestedQuantity = plan?.slowReplenishmentPlan?.suggestedQuantity || 0;
+        const fastSuggestedQuantity = plan?.replenishmentMode === "slow_ship_only" ? 0 : replenishmentPlans?.fast_ship?.suggestedQuantity || 0;
+        const standardSlowSuggestedQuantity = plan?.replenishmentMode === "slow_ship_only" ? 0 : replenishmentPlans?.slow_ship?.suggestedQuantity || 0;
         const slowSuggestedCost = slowCost ? slowSuggestedQuantity * Number(slowCost.unit_shipping_cost_cny || 0) : null;
-        const canApplyPlan = Boolean(salesControlSegments.length || slowSuggestedQuantity);
+        const canApplyPlan = Boolean(salesControlSegments.length || slowSuggestedQuantity || fastSuggestedQuantity || standardSlowSuggestedQuantity);
         return (
           <div className={`sales-control-plan ${plan?.replenishmentMode === "slow_ship_only" ? "slow-only" : ""}`} aria-label="控销动态建议" key={plan?.id || controlPlanName}>
             <div>
@@ -2251,12 +3474,12 @@ function SupplySimulatorControls({
                 ? slowSuggestedQuantity
                   ? (
                       <>
-                        {" · 仅慢船建议 "}
+                        {` · 仅慢船${slowShipPolicyWindowText}建议 `}
                         <span className="supply-channel-quantity slow-quantity">{formatNumber(slowSuggestedQuantity)} 件</span>
                         {slowSuggestedCost !== null ? ` / ${formatMoney(slowSuggestedCost)} 元` : ""}
                       </>
                     )
-                  : " · 60天后暂无慢船缺口"
+                  : ` · 慢船${slowShipPolicyWindowText}暂无缺口`
                 : ""}
             </small>
             <button type="button" className="supply-suggestion-button" onClick={() => onApplySalesControlPlan(plan?.id)} disabled={!canApplyPlan}>
@@ -2292,6 +3515,8 @@ function SupplySimulatorControls({
           const disabledByStrategy = slowShipOnlyMode && channel.channel !== "slow_ship";
           const suggestedQuantity = disabledByStrategy ? 0 : plan.suggestedQuantity || 0;
           const suggestedCost = cost ? suggestedQuantity * Number(cost.unit_shipping_cost_cny || 0) : null;
+          const marginImpactQuantity = replenishQuantity || suggestedQuantity;
+          const marginImpact = buildMarginImpactEstimate(item, cost, baselineCost, marginImpactQuantity);
           return (
             <article className={`supply-simulator-card ${channel.className} ${disabledByStrategy ? "strategy-disabled" : ""}`} key={channel.channel}>
               <div className="supply-simulator-card-head">
@@ -2334,6 +3559,7 @@ function SupplySimulatorControls({
                   " · 暂无缺口"
                 )}
                 {suggestedCost ? ` · 建议成本 ${formatMoney(suggestedCost)} 元` : ""}
+                {marginImpact && <span className="margin-impact-text">{formatMarginImpactText(marginImpact)}</span>}
               </small>
             </article>
           );
@@ -2342,47 +3568,58 @@ function SupplySimulatorControls({
       <article className="supply-control-card">
         <div className="supply-simulator-card-head">
           <strong>控销时段</strong>
-          <span>支持多段，最高60%</span>
+          <div className="supply-control-head-meta">
+            <span>支持多段，最高60%</span>
+            <span className="supply-control-total-badge" title={formatControlQuantityTitle(controlQuantitySummary)}>
+              合计 {formatControlQuantityPerDay(controlQuantitySummary.averagePerDay)} 个/天
+            </span>
+          </div>
         </div>
         <div className="supply-control-inputs">
-          {salesControlRows.map((salesControl, index) => (
-            <div className="supply-control-row" key={`sales-control-${index}`}>
-              <label>
-                <span>起</span>
-                <input
-                  min="1"
-                  step="1"
-                  type="number"
-                  value={salesControl.startDay ?? ""}
-                  onChange={(event) => updateSalesControl(index, "startDay", event.target.value)}
-                />
-              </label>
-              <label>
-                <span>止</span>
-                <input
-                  min="1"
-                  step="1"
-                  type="number"
-                  value={salesControl.endDay ?? ""}
-                  onChange={(event) => updateSalesControl(index, "endDay", event.target.value)}
-                />
-              </label>
-              <label>
-                <span>控%</span>
-                <input
-                  max="60"
-                  min="0"
-                  step="1"
-                  type="number"
-                  value={salesControl.controlRatio ?? ""}
-                  onChange={(event) => updateSalesControl(index, "controlRatio", event.target.value)}
-                />
-              </label>
-              <button type="button" className="supply-remove-button" onClick={() => removeSalesControl(index)} disabled={salesControlRows.length <= 1}>
-                删除
-              </button>
-            </div>
-          ))}
+          {salesControlRows.map((salesControl, index) => {
+            const rowSummary = controlQuantitySummary.rowSummaries[index] || {};
+            return (
+              <div className="supply-control-row" key={`sales-control-${index}`}>
+                <label>
+                  <span>起</span>
+                  <input
+                    min="1"
+                    step="1"
+                    type="number"
+                    value={salesControl.startDay ?? ""}
+                    onChange={(event) => updateSalesControl(index, "startDay", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>止</span>
+                  <input
+                    min="1"
+                    step="1"
+                    type="number"
+                    value={salesControl.endDay ?? ""}
+                    onChange={(event) => updateSalesControl(index, "endDay", event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>控%</span>
+                  <input
+                    max="60"
+                    min="0"
+                    step="1"
+                    type="number"
+                    value={salesControl.controlRatio ?? ""}
+                    onChange={(event) => updateSalesControl(index, "controlRatio", event.target.value)}
+                  />
+                </label>
+                <span className="supply-control-row-total" title={formatControlQuantityTitle(rowSummary)}>
+                  约 {formatControlQuantityPerDay(rowSummary.averagePerDay)} 个/天
+                </span>
+                <button type="button" className="supply-remove-button" onClick={() => removeSalesControl(index)} disabled={salesControlRows.length <= 1}>
+                  删除
+                </button>
+              </div>
+            );
+          })}
           <button type="button" className="supply-add-button" onClick={addSalesControl}>
             增加控销段
           </button>
@@ -2396,6 +3633,8 @@ function supplyDayClassName(day) {
   return [
     day.status,
     day.shippingWindowStatus || "",
+    day.shippingSafetyStartBoundary ? "safety-start-boundary" : "",
+    day.shippingSafetyEndBoundary ? "safety-end-boundary" : "",
     day.controlRatio > 0 ? "has-control" : "",
     day.partialReplenished ? "partial-replenished" : "",
     day.replenishmentChannel ? `channel-${day.replenishmentChannel}` : "",
@@ -2407,11 +3646,14 @@ function supplyDayClassName(day) {
 function formatSupplyDayTitle(day) {
   const statusLabel = day.status === "shortage" ? "断货" : day.status === "replenished" ? "补货覆盖" : "供货正常";
   const parts = [`第 ${day.day} 天 ${statusLabel}`];
-  if (day.shippingWindowStatus === "no-ship") {
-    parts.push(`${day.shippingPolicyLabel || "当前"}款 ${formatNumber(day.shippingCutoffDay)} 天后不建议新增发货`);
+  if (day.shippingWindowStatus === "safety-stock") {
+    parts.push(`${day.shippingPolicyLabel || "当前"}款 ${formatNumber(day.shippingCutoffDay)} 天后保留 ${formatNumber(day.shippingSafetyStockDays)} 天安全库存窗口`);
   }
   if (day.shippingWindowStatus === "post-threshold-goods") {
-    parts.push(`${day.shippingPolicyLabel || "当前"}款 ${formatNumber(day.shippingCutoffDay)} 天后仍有货/到货 ${formatNumber(day.shippingArrivalQuantity)} 件，复核是否多发`);
+    parts.push(`${day.shippingPolicyLabel || "当前"}款超过 ${formatNumber(day.shippingSafetyEndDay)} 天安全库存后仍有货/到货 ${formatNumber(day.shippingArrivalQuantity)} 件，复核是否多发`);
+  }
+  if (day.shippingWindowStatus === "post-threshold-replenished") {
+    parts.push(`${day.shippingPolicyLabel || "当前"}款超过 ${formatNumber(day.shippingSafetyEndDay)} 天安全库存后由补货覆盖 ${formatNumber(day.shippingArrivalQuantity)} 件，复核是否仍需发货`);
   }
   if (day.controlSavedQuantity > 0) parts.push(`控销减少 ${formatPreciseNumber(day.controlSavedQuantity)} 件需求`);
   if (day.shortageQuantity > 0) parts.push(`剩余缺口 ${formatPreciseNumber(day.shortageQuantity)} 件`);
@@ -2470,6 +3712,89 @@ function formatControlRowsPercentText(rows = []) {
   return formatControlSegmentsPercentText(segments);
 }
 
+function buildSalesControlQuantitySummary(item = {}, simulation = null, rows = []) {
+  const rowSummaries = (rows || []).map(() => ({
+    averagePerDay: null,
+    totalQuantity: 0,
+    days: 0,
+  }));
+  const normalizedRows = normalizeSalesControlRowsWithIndex(rows);
+  if (!normalizedRows.length) {
+    return { averagePerDay: null, totalQuantity: 0, days: 0, rowSummaries };
+  }
+
+  const controlSimulation = {
+    ...createEmptySupplySimulation(item),
+    ...(simulation || {}),
+    salesControl: { ...createEmptySupplySimulation().salesControl },
+    salesControls: normalizedRows.map(({ startDay, endDay, controlRatio }) => ({ startDay, endDay, controlRatio })),
+  };
+  const summary = piciShortageWindowSummary(item, controlSimulation);
+  const days = Array.isArray(summary.days) ? summary.days : [];
+  const dayByNumber = new Map(days.map((day) => [Number(day.day), day]));
+  const activeDays = days.filter((day) => Number(day.controlSavedQuantity || 0) > 0);
+  const totalQuantity = activeDays.reduce((total, day) => total + Math.max(Number(day.controlSavedQuantity || 0), 0), 0);
+
+  normalizedRows.forEach((row) => {
+    let rowTotal = 0;
+    let rowDays = 0;
+    for (let day = row.startDay; day <= row.endDay; day += 1) {
+      const dayData = dayByNumber.get(day);
+      const originalForecast = Number(dayData?.originalForecast || 0);
+      if (originalForecast <= 0) continue;
+      rowTotal += originalForecast * row.controlRatio / 100;
+      rowDays += 1;
+    }
+    rowSummaries[row.index] = {
+      averagePerDay: rowDays ? rowTotal / rowDays : null,
+      totalQuantity: rowTotal,
+      days: rowDays,
+    };
+  });
+
+  return {
+    averagePerDay: activeDays.length ? totalQuantity / activeDays.length : null,
+    totalQuantity,
+    days: activeDays.length,
+    rowSummaries,
+  };
+}
+
+function normalizeSalesControlRowsWithIndex(rows = []) {
+  return (rows || [])
+    .map((row, index) => {
+      const startDay = Number(row?.startDay);
+      const endDay = Number(row?.endDay);
+      const controlRatio = Math.max(0, Math.min(Number(row?.controlRatio) || 0, 60));
+      if (!Number.isFinite(startDay) || !Number.isFinite(endDay) || startDay <= 0 || endDay <= 0 || !controlRatio) {
+        return null;
+      }
+      return {
+        index,
+        startDay: Math.min(startDay, endDay),
+        endDay: Math.max(startDay, endDay),
+        controlRatio,
+      };
+    })
+    .filter(Boolean);
+}
+
+function formatControlQuantityPerDay(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return "-";
+  return formatPreciseNumber(number);
+}
+
+function formatControlQuantityTitle(summary = {}) {
+  const days = Number(summary.days || 0);
+  const total = Number(summary.totalQuantity || 0);
+  const average = Number(summary.averagePerDay || 0);
+  if (!days || !Number.isFinite(total) || total <= 0) {
+    return "当前控销段暂无可计算的预测需求";
+  }
+  return `累计控销约 ${formatPreciseNumber(total)} 个，覆盖 ${formatNumber(days)} 天，平均 ${formatPreciseNumber(average)} 个/天`;
+}
+
 function dominantReplenishmentChannel(quantityByChannel) {
   return Object.entries(quantityByChannel || {}).sort((left, right) => Number(right[1] || 0) - Number(left[1] || 0))[0]?.[0] || "";
 }
@@ -2520,12 +3845,20 @@ const SUPPLY_SIMULATION_CHANNELS = [
   },
 ];
 
-function createEmptySupplySimulation() {
+const FLAT_STAGNANT_SHIPPING_CUTOFF_DAY = 75;
+const BOOM_WANG_SHIPPING_CUTOFF_DAY = 90;
+const SLOW_SHIP_REPLENISHMENT_START_DAY = 61;
+const BOOM_WANG_DEFAULT_SAFETY_STOCK_DAYS = 10;
+const FLAT_STAGNANT_DEFAULT_SAFETY_STOCK_DAYS = 0;
+const FISHBONE_EXTRA_WEEK_DAYS = 7;
+
+function createEmptySupplySimulation(item = null) {
   const result = SUPPLY_SIMULATION_CHANNELS.reduce((items, channel) => {
     items[channel.channel] = { replenishQuantity: "" };
     return items;
   }, {});
   result.strategyMode = "";
+  result.safetyStockDays = item ? String(defaultSafetyStockDaysForItem(item)) : "";
   result.salesControl = { startDay: "", endDay: "", controlRatio: "" };
   result.salesControls = [];
   return result;
@@ -2563,6 +3896,48 @@ function simulationForSalesControlSegments(segments = []) {
   };
 }
 
+function simulationForSalesControlPlan(currentSimulation, plan) {
+  const empty = createEmptySupplySimulation();
+  return {
+    ...empty,
+    ...(currentSimulation || {}),
+    strategyMode: plan?.replenishmentMode === "slow_ship_only" ? "slow_ship_only" : "",
+    salesControl: { ...empty.salesControl },
+    salesControls: (plan?.segments || []).map((segment) => ({
+      startDay: String(segment.startDay),
+      endDay: String(segment.endDay),
+      controlRatio: String(segment.controlRatio),
+    })),
+  };
+}
+
+function standardShipPlansAfterSalesControl(item, currentSimulation, plan, summaryOptions = {}) {
+  if (!plan || plan.replenishmentMode === "slow_ship_only") {
+    return { fast_ship: null, slow_ship: null };
+  }
+  const empty = createEmptySupplySimulation();
+  const plannedSimulation = simulationForSalesControlPlan(currentSimulation, plan);
+  const fastWindow = piciShortageWindowSummary(
+    item,
+    simulationWithoutChannels(plannedSimulation, ["fast_ship", "slow_ship"]),
+    summaryOptions
+  ).fastReplenishmentWindow;
+  const fastSuggestedQuantity = fastWindow?.suggestedQuantity || 0;
+  const withFastShip = {
+    ...plannedSimulation,
+    fast_ship: {
+      ...empty.fast_ship,
+      replenishQuantity: fastSuggestedQuantity ? String(fastSuggestedQuantity) : "",
+    },
+  };
+  const slowWindow = piciShortageWindowSummary(
+    item,
+    simulationWithoutChannels(withFastShip, ["slow_ship"]),
+    summaryOptions
+  ).slowReplenishmentWindow;
+  return { fast_ship: fastWindow, slow_ship: slowWindow };
+}
+
 function simulationWithoutChannels(simulation, channels = []) {
   const blocked = new Set(channels);
   const empty = createEmptySupplySimulation();
@@ -2586,16 +3961,61 @@ function isBoomOrWangSalesProperty(value) {
   return text.includes("爆") || text.includes("旺");
 }
 
+function overstockRuleHintForSalesProperty(value) {
+  return isFlatOrStagnantSalesProperty(value)
+    ? { key: "flat_stagnant", ...OVERSTOCK_RULE_HINTS.flat_stagnant }
+    : { key: "boom_wang", ...OVERSTOCK_RULE_HINTS.boom_wang };
+}
+
+function formatOverstockRuleHintText(salesProperty) {
+  const hint = overstockRuleHintForSalesProperty(salesProperty);
+  return `${hint.label}冗余口径：${hint.lines.join("；")}`;
+}
+
+function overstockRuleTooltip(salesProperty) {
+  const hint = overstockRuleHintForSalesProperty(salesProperty);
+  return [`${hint.label}冗余判断：`, ...hint.lines, AGE_RULE_TOOLTIP].join("\n");
+}
+
+function overstockSellableRuleTooltip(salesProperty, sellableKey) {
+  const hint = overstockRuleHintForSalesProperty(salesProperty);
+  return hint.sellable?.[sellableKey] || overstockRuleTooltip(salesProperty);
+}
+
+function defaultSafetyStockDaysForItem(item = {}) {
+  return isFlatOrStagnantSalesProperty(item.sales_property)
+    ? FLAT_STAGNANT_DEFAULT_SAFETY_STOCK_DAYS
+    : BOOM_WANG_DEFAULT_SAFETY_STOCK_DAYS;
+}
+
+function safetyStockDaysForSimulation(simulation, item = {}) {
+  const fallback = defaultSafetyStockDaysForItem(item);
+  const rawValue = simulation?.safetyStockDays;
+  if (rawValue === "" || rawValue === null || rawValue === undefined) return fallback;
+  const value = Math.max(0, Number(rawValue));
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function shippingPolicyForItem(item = {}) {
   const flatOrStagnant = isFlatOrStagnantSalesProperty(item.sales_property);
   return {
     label: flatOrStagnant ? "平滞" : isBoomOrWangSalesProperty(item.sales_property) ? "爆旺" : "爆旺",
-    cutoffDay: flatOrStagnant ? 75 : 90,
+    cutoffDay: flatOrStagnant ? FLAT_STAGNANT_SHIPPING_CUTOFF_DAY : BOOM_WANG_SHIPPING_CUTOFF_DAY,
   };
 }
 
-function annotateSupplyWeeksForShippingPolicy(weeks = [], item = {}) {
+function shippingSafetyEndDayForItem(item = {}, safetyStockDays = defaultSafetyStockDaysForItem(item)) {
+  return shippingPolicyForItem(item).cutoffDay + Math.max(0, Number(safetyStockDays) || 0);
+}
+
+function summarizeSlowShipWindowBeforeSafetyEnd(item = {}, days = [], safetyStockDays = defaultSafetyStockDaysForItem(item)) {
+  return summarizeSupplyWindow(days, SLOW_SHIP_REPLENISHMENT_START_DAY, shippingSafetyEndDayForItem(item, safetyStockDays));
+}
+
+function annotateSupplyWeeksForShippingPolicy(weeks = [], item = {}, safetyStockDays = defaultSafetyStockDaysForItem(item)) {
   const policy = shippingPolicyForItem(item);
+  const normalizedSafetyStockDays = Math.max(0, Number(safetyStockDays) || 0);
+  const safetyEndDay = policy.cutoffDay + normalizedSafetyStockDays;
   return (Array.isArray(weeks) ? weeks : []).map((week) => {
     const arrivalQuantityByDay = new Map();
     (week.arrivals || []).forEach((arrival) => {
@@ -2607,15 +4027,32 @@ function annotateSupplyWeeksForShippingPolicy(weeks = [], item = {}) {
     return {
       ...week,
       days: (week.days || []).map((day) => {
-        if (!day || Number(day.day) <= policy.cutoffDay) return day;
+        const dayNumber = Number(day?.day);
+        if (!day || dayNumber <= policy.cutoffDay) return day;
         const arrivalQuantity = arrivalQuantityByDay.get(Number(day.day)) || 0;
         const replenishedQuantity = Number(day.replenishedQuantity) || 0;
+        if (dayNumber <= safetyEndDay) {
+          return {
+            ...day,
+            shippingPolicyLabel: policy.label,
+            shippingCutoffDay: policy.cutoffDay,
+            shippingSafetyStockDays: normalizedSafetyStockDays,
+            shippingSafetyEndDay: safetyEndDay,
+            shippingSafetyStartBoundary: dayNumber === policy.cutoffDay + 1,
+            shippingSafetyEndBoundary: dayNumber === safetyEndDay,
+            shippingWindowStatus: "safety-stock",
+            shippingArrivalQuantity: roundToOne(Math.max(arrivalQuantity, replenishedQuantity)),
+          };
+        }
         const hasGoods = day.status !== "shortage" || arrivalQuantity > 0 || replenishedQuantity > 0;
+        const shippingWindowStatus = replenishedQuantity > 0 ? "post-threshold-replenished" : hasGoods ? "post-threshold-goods" : "";
         return {
           ...day,
           shippingPolicyLabel: policy.label,
           shippingCutoffDay: policy.cutoffDay,
-          shippingWindowStatus: hasGoods ? "post-threshold-goods" : "no-ship",
+          shippingSafetyStockDays: normalizedSafetyStockDays,
+          shippingSafetyEndDay: safetyEndDay,
+          shippingWindowStatus,
           shippingArrivalQuantity: roundToOne(Math.max(arrivalQuantity, replenishedQuantity)),
         };
       }),
@@ -2625,12 +4062,13 @@ function annotateSupplyWeeksForShippingPolicy(weeks = [], item = {}) {
 
 function buildSalesControlGuidance(plans = []) {
   const controlPlans = (Array.isArray(plans) ? plans : []).filter(Boolean);
-  const plan = controlPlans.find((item) => item?.id === "standard") || controlPlans.find((item) => String(item?.title || "").includes("爆旺")) || controlPlans[0];
+  const plan = controlPlans[0];
   const segments = plan?.segments || [];
   const targetLimitDay = plan?.targetLimitDay || 45;
+  const logicLabel = String(plan?.title || "").includes("平滞") || String(plan?.id || "").includes("flat") ? "平滞控销口径" : "爆旺逻辑";
   if (!segments.length) {
     return {
-      title: `按爆旺逻辑，${formatNumber(targetLimitDay)}天前无需控销`,
+      title: `按${logicLabel}，${formatNumber(targetLimitDay)}天前无需控销`,
       detail: "现有供货可覆盖目标窗口。",
     };
   }
@@ -2638,7 +4076,7 @@ function buildSalesControlGuidance(plans = []) {
   const controlText = segments.map((segment) => `第${formatNumber(segment.startDay)}-${formatNumber(segment.endDay)}天控${formatNumber(segment.controlRatio)}%`).join("；");
   const residualText = plan?.residualShortageQuantity ? `；控销后仍缺 ${formatNumber(plan.residualShortageQuantity)} 件` : "";
   return {
-    title: `按爆旺逻辑，建议控销 ${formatNumber(controlDays)} 天`,
+    title: `按${logicLabel}，建议控销 ${formatNumber(controlDays)} 天`,
     detail: `${controlText}${residualText}。`,
   };
 }
@@ -2654,7 +4092,7 @@ function buildShippingGuidance(item = {}, weeks = []) {
     });
   return {
     title: `${policy.label}款按发货日起 ${formatNumber(policy.cutoffDay)} 天内缺口计算发货量`,
-    detail: `${channelParts.join("；")}。${formatNumber(policy.cutoffDay)}天后蓝色=不建议发货，橘色=已有/仍有货需复核。`,
+    detail: `${channelParts.join("；")}。${formatNumber(policy.cutoffDay)}天后蓝色=不建议发货，紫色=补货覆盖需复核，橘色=已有/仍有货需复核。`,
   };
 }
 
@@ -2761,9 +4199,177 @@ function shippingCostByChannel(estimate) {
   const map = new Map();
   if (!estimate?.ok || !Array.isArray(estimate.estimates)) return map;
   estimate.estimates.forEach((item) => {
-    if (item.channel) map.set(item.channel, item);
+    if (item.channel) map.set(item.channel, { ...item, current_month_profit_summary: estimate.current_month_profit_summary || {} });
   });
   return map;
+}
+
+function normalizeGrossMarginRatio(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return Math.abs(number) > 1 ? number / 100 : number;
+}
+
+function firstPositiveNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number) && number > 0) return number;
+  }
+  return null;
+}
+
+function firstFiniteNumber(...values) {
+  for (const value of values) {
+    const number = Number(value);
+    if (Number.isFinite(number)) return number;
+  }
+  return null;
+}
+
+function supplyChannelShortLabel(channel) {
+  return SUPPLY_SIMULATION_CHANNELS.find((item) => item.channel === channel)?.shortLabel || "基准渠道";
+}
+
+function baselineShippingChannelForItem(item = {}) {
+  const text = String(item.first_leg_logistics_channel || "").trim();
+  if (text === "快船") return "fast_ship";
+  if (text === "慢船") return "slow_ship";
+  return "";
+}
+
+function currentMonthProjectionFactor(summary = {}) {
+  const backendFactor = Number(summary.month_projection_factor);
+  if (Number.isFinite(backendFactor) && backendFactor > 0) return backendFactor;
+  const monthText = String(summary.report_month || "").trim();
+  const monthMatch = monthText.match(/^(\d{4})-(\d{2})$/);
+  if (!monthMatch) return 1;
+  const year = Number(monthMatch[1]);
+  const month = Number(monthMatch[2]);
+  const monthDays = new Date(year, month, 0).getDate();
+  const endMatch = String(summary.end_date || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!endMatch || `${endMatch[1]}-${endMatch[2]}` !== monthText) return 1;
+  const elapsedDays = Math.max(1, Math.min(Number(endMatch[3]) || monthDays, monthDays));
+  return monthDays / elapsedDays;
+}
+
+function buildMarginImpactEstimate(item = {}, channelCost, baselineCost, quantity) {
+  const replenishQuantity = Math.max(Number(quantity) || 0, 0);
+  const channelUnitCost = Number(channelCost?.unit_shipping_cost_cny);
+  const baselineUnitCost = Number(baselineCost?.unit_shipping_cost_cny);
+  if (!replenishQuantity || !Number.isFinite(channelUnitCost) || !Number.isFinite(baselineUnitCost)) return null;
+  const currentMonthProfit = channelCost?.current_month_profit_summary || baselineCost?.current_month_profit_summary || item.current_month_profit_summary || {};
+  const baselineChannel = baselineCost?.channel || baselineShippingChannelForItem(item);
+  const baselineLabel = baselineChannel ? `头程${supplyChannelShortLabel(baselineChannel)}` : "头程基准渠道";
+  const extraUnitCost = channelUnitCost - baselineUnitCost;
+  const extraCost = extraUnitCost * replenishQuantity;
+  const actualProfit = firstFiniteNumber(currentMonthProfit.gross_profit_cny, currentMonthProfit.gross_profit);
+  const actualIncome = firstPositiveNumber(currentMonthProfit.gross_profit_income_cny, currentMonthProfit.gross_profit_income);
+  const actualCost = firstFiniteNumber(
+    currentMonthProfit.gross_profit_cost_cny,
+    currentMonthProfit.gross_profit_cost,
+    actualProfit !== null && actualIncome !== null ? actualIncome - actualProfit : null
+  );
+  const projectionFactor = currentMonthProjectionFactor(currentMonthProfit);
+  const projectedProfit = actualProfit !== null ? actualProfit * projectionFactor : null;
+  const projectedCost = actualCost !== null ? actualCost * projectionFactor : null;
+  const estimatedProfit = projectedProfit !== null ? projectedProfit - extraCost : null;
+  const estimatedCost = projectedCost !== null ? projectedCost + extraCost : null;
+  const hasProfitBasis = Boolean(currentMonthProfit.ok && actualProfit !== null && actualCost !== null && actualCost > 0 && projectedCost > 0);
+  const baseGrossMargin = hasProfitBasis ? projectedProfit / projectedCost : null;
+  const estimatedGrossMargin = hasProfitBasis && estimatedCost > 0 ? estimatedProfit / estimatedCost : null;
+  const marginDelta = baseGrossMargin !== null && estimatedGrossMargin !== null ? estimatedGrossMargin - baseGrossMargin : null;
+  return {
+    quantity: replenishQuantity,
+    extraUnitCost,
+    extraCost,
+    reportMonth: currentMonthProfit.report_month || "",
+    marginBasis: hasProfitBasis ? "current_month" : "missing",
+    baselineChannel,
+    baselineLabel,
+    actualProfit,
+    actualCost,
+    projectedProfit,
+    projectedCost,
+    estimatedProfit,
+    estimatedCost,
+    projectionFactor,
+    monthDays: Number(currentMonthProfit.month_days) || null,
+    elapsedDays: Number(currentMonthProfit.elapsed_days) || null,
+    baseGrossMargin,
+    marginDelta,
+    estimatedGrossMargin,
+  };
+}
+
+function formatMarginPointChangeText(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const points = Math.abs(Number(value) * 100);
+  const direction = Number(value) < 0 ? "下降" : Number(value) > 0 ? "上涨" : "不变";
+  return `${direction}${points.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}个百分点`;
+}
+
+function formatMarginImpactText(impact) {
+  if (!impact) return "";
+  if (impact.marginBasis === "current_month" && impact.marginDelta !== null) {
+    return `较${impact.baselineLabel || "头程基准渠道"}预计利润率${formatMarginPointChangeText(impact.marginDelta)}`;
+  }
+  return "预计利润率暂不能估算";
+}
+
+function formatCurrentMonthProfitRate(summary = {}) {
+  if (!summary?.ok) return "-";
+  const profit = firstFiniteNumber(summary.gross_profit_cny, summary.gross_profit);
+  const cost = firstFiniteNumber(
+    summary.gross_profit_cost_cny,
+    summary.gross_profit_cost,
+    summary.gross_profit_income_cny !== null && summary.gross_profit_income_cny !== undefined && profit !== null
+      ? Number(summary.gross_profit_income_cny) - profit
+      : null
+  );
+  if (profit === null || !cost) return "-";
+  return `${formatRatioPercent(profit / cost)}（利润/成本，${summary.report_month || "本月"}）`;
+}
+
+function formatCurrentMonthProfitAmount(summary = {}) {
+  if (!summary?.ok || summary.gross_profit_cny === null || summary.gross_profit_cny === undefined) return "-";
+  const projectedProfit = firstFiniteNumber(summary.projected_gross_profit_cny);
+  const factor = currentMonthProjectionFactor(summary);
+  if (projectedProfit !== null && Math.abs(factor - 1) > 0.005) {
+    return `${formatMoney(summary.gross_profit_cny)} 元，扩整月 ${formatMoney(projectedProfit)} 元`;
+  }
+  return `${formatMoney(summary.gross_profit_cny)} 元（${summary.report_month || "本月"}）`;
+}
+
+function formatCurrentMonthCostAmount(summary = {}) {
+  if (!summary?.ok) return "-";
+  const profit = firstFiniteNumber(summary.gross_profit_cny, summary.gross_profit);
+  const cost = firstFiniteNumber(
+    summary.gross_profit_cost_cny,
+    summary.gross_profit_cost,
+    summary.gross_profit_income_cny !== null && summary.gross_profit_income_cny !== undefined && profit !== null
+      ? Number(summary.gross_profit_income_cny) - profit
+      : null
+  );
+  if (cost === null) return "-";
+  const projectedCost = firstFiniteNumber(summary.projected_gross_profit_cost_cny);
+  const factor = currentMonthProjectionFactor(summary);
+  if (projectedCost !== null && Math.abs(factor - 1) > 0.005) {
+    return `${formatMoney(cost)} 元，扩整月 ${formatMoney(projectedCost)} 元`;
+  }
+  return `${formatMoney(cost)} 元（${summary.report_month || "本月"}）`;
+}
+
+function formatCurrentMonthProfitBasis(summary = {}) {
+  if (!summary?.ok) return "暂无本月利润";
+  const profitRate = formatCurrentMonthProfitRate(summary);
+  return [
+    summary.report_month || "本月",
+    summary.gross_profit_cny !== null && summary.gross_profit_cny !== undefined ? `利润 ${formatMoney(summary.gross_profit_cny)} 元` : "",
+    formatCurrentMonthCostAmount(summary) !== "-" ? `成本 ${formatCurrentMonthCostAmount(summary).replace(`（${summary.report_month || "本月"}）`, "")}` : "",
+    profitRate !== "-" ? `利润率 ${profitRate.replace(`（利润/成本，${summary.report_month || "本月"}）`, "")}` : "",
+    summary.elapsed_days && summary.month_days ? `扩散 ${formatNumber(summary.elapsed_days)}/${formatNumber(summary.month_days)}天` : "",
+  ].filter(Boolean).join(" · ");
 }
 
 function formatSupplyMarkerTooltip(label, costEstimate, estimateStatus) {
@@ -2780,7 +4386,7 @@ function formatSupplyMarkerTooltip(label, costEstimate, estimateStatus) {
   return [label, "成本估算加载中或暂无匹配渠道。"].join("\n");
 }
 
-function ReplenishmentCostEstimate({ estimate, loading, error, urgentAirReplenishmentPlan, standardAirReplenishmentPlan }) {
+function ReplenishmentCostEstimate({ estimate, loading, error, item = {}, urgentAirReplenishmentPlan, standardAirReplenishmentPlan }) {
   const [quantity, setQuantity] = useState(1);
   if (loading && !estimate) {
     return <p className="empty-detail">正在按 product info.weight_gram 估算补货成本...</p>;
@@ -2823,12 +4429,17 @@ function ReplenishmentCostEstimate({ estimate, loading, error, urgentAirReplenis
       rate_cny_per_kg: ratePerKg,
       unit_weight_kg: unitWeightKg,
       unit_shipping_cost_cny: unitWeightKg * ratePerKg,
+      current_month_profit_summary: estimate.current_month_profit_summary || {},
     };
   });
   const urgentAirCostItem = costItems.find((item) => item.channel === "urgent_air");
   const standardAirCostItem = costItems.find((item) => item.channel === "standard_air") || costItems.find((item) => item.channel === "air_or_urgent_transfer");
+  const baselineChannel = baselineShippingChannelForItem(item);
+  const baselineCostItem = baselineChannel ? costItems.find((costItem) => costItem.channel === baselineChannel) : null;
   const suggestedUrgentAirCost = urgentAirCostItem ? suggestedUrgentAirQuantity * Number(urgentAirCostItem.unit_shipping_cost_cny || 0) : null;
   const suggestedStandardAirCost = standardAirCostItem ? suggestedStandardAirQuantity * Number(standardAirCostItem.unit_shipping_cost_cny || 0) : null;
+  const suggestedUrgentAirMarginImpact = buildMarginImpactEstimate(item, urgentAirCostItem, baselineCostItem, suggestedUrgentAirQuantity);
+  const suggestedStandardAirMarginImpact = buildMarginImpactEstimate(item, standardAirCostItem, baselineCostItem, suggestedStandardAirQuantity);
   return (
     <div className="replenishment-cost">
       {(urgentAirCostItem || standardAirCostItem) && (
@@ -2847,6 +4458,8 @@ function ReplenishmentCostEstimate({ estimate, loading, error, urgentAirReplenis
             {standardAirCostItem ? `普通单件 ${formatMoney(standardAirCostItem.unit_shipping_cost_cny)} 元` : ""}
             {suggestedUrgentAirCost !== null ? ` · 加急成本 ${formatMoney(suggestedUrgentAirCost)} 元` : ""}
             {suggestedStandardAirCost !== null ? ` · 普通成本 ${formatMoney(suggestedStandardAirCost)} 元` : ""}
+            {suggestedUrgentAirMarginImpact ? ` · 加急${formatMarginImpactText(suggestedUrgentAirMarginImpact)}` : ""}
+            {suggestedStandardAirMarginImpact ? ` · 普通${formatMarginImpactText(suggestedStandardAirMarginImpact)}` : ""}
           </small>
         </div>
       )}
@@ -2861,7 +4474,15 @@ function ReplenishmentCostEstimate({ estimate, loading, error, urgentAirReplenis
         </div>
         <div>
           <span>计算公式</span>
-          <strong>单件运费 * 自填补货数量</strong>
+          <strong>预计利润率=(月扩散利润额-单件运费差×补货数量)/(月扩散成本+单件运费差×补货数量)</strong>
+        </div>
+        <div>
+          <span>头程基准渠道</span>
+          <strong>{baselineChannel ? supplyChannelShortLabel(baselineChannel) : "未写快船/慢船，不计算影响"}</strong>
+        </div>
+        <div>
+          <span>本月利润口径</span>
+          <strong>{formatCurrentMonthProfitBasis(estimate.current_month_profit_summary)}</strong>
         </div>
       </div>
       <label className="cost-quantity-control">
@@ -2883,23 +4504,27 @@ function ReplenishmentCostEstimate({ estimate, loading, error, urgentAirReplenis
       </div>
       {costItems.length > 0 ? (
         <div className="cost-estimate-list">
-          {costItems.map((item) => (
-            <article className={`cost-estimate-item ${item.channel}`} key={item.channel}>
-              <div className="cost-estimate-head">
-                <div>
-                  <strong>{item.channel_label || item.channel}</strong>
-                  <small>{item.window ? `${item.window} · ` : ""}{item.arrival_day ? `到货 第${formatNumber(item.arrival_day)}天` : "按当前重量和费率测算"}</small>
+          {costItems.map((costItem) => {
+            const marginImpact = buildMarginImpactEstimate(item, costItem, baselineCostItem, replenishmentQuantity);
+            return (
+              <article className={`cost-estimate-item ${costItem.channel}`} key={costItem.channel}>
+                <div className="cost-estimate-head">
+                  <div>
+                    <strong>{costItem.channel_label || costItem.channel}</strong>
+                    <small>{costItem.window ? `${costItem.window} · ` : ""}{costItem.arrival_day ? `到货 第${formatNumber(costItem.arrival_day)}天` : "按当前重量和费率测算"}</small>
+                  </div>
+                  <span>{formatMoney(costItem.unit_shipping_cost_cny * replenishmentQuantity)} 元</span>
                 </div>
-                <span>{formatMoney(item.unit_shipping_cost_cny * replenishmentQuantity)} 元</span>
-              </div>
-              <div className="cost-estimate-metrics">
-                <span>单件 {formatMoney(item.unit_shipping_cost_cny)} 元</span>
-                <span>数量 {formatNumber(replenishmentQuantity)} 件</span>
-                <span>总重 {formatPreciseNumber(item.unit_weight_kg * replenishmentQuantity)} kg</span>
-                <span>{formatPreciseNumber(item.rate_cny_per_kg)} 元/kg</span>
-              </div>
-            </article>
-          ))}
+                <div className="cost-estimate-metrics">
+                  <span>单件 {formatMoney(costItem.unit_shipping_cost_cny)} 元</span>
+                  <span>数量 {formatNumber(replenishmentQuantity)} 件</span>
+                  <span>总重 {formatPreciseNumber(costItem.unit_weight_kg * replenishmentQuantity)} kg</span>
+                  <span>{formatPreciseNumber(costItem.rate_cny_per_kg)} 元/kg</span>
+                  {marginImpact && <span>{formatMarginImpactText(marginImpact)}</span>}
+                </div>
+              </article>
+            );
+          })}
         </div>
       ) : (
         <p className="empty-detail">当前缺少费率配置，暂不能估算补货成本。</p>
@@ -3246,6 +4871,9 @@ function ForecastDetailChart({ forecastVersions = [], actualPoints = [] }) {
   );
 }
 
+const MONTHLY_TOTAL_BAR_WIDTH = 16;
+const MONTHLY_TOTAL_BAR_GAP = 8;
+
 function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
   const [activeBar, setActiveBar] = useState(null);
   const parseMonth = d3.timeParse("%Y-%m");
@@ -3379,15 +5007,19 @@ function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
       : []
   );
   const barsForItem = (item) => [...item.forecastBars, ...actualBarForItem(item)];
-  const localBarScale = (item) => d3
-    .scaleBand()
-    .domain(barsForItem(item).map((bar) => bar.key))
-    .range([0, xScale.bandwidth()])
-    .padding(0.16);
+  const barXForItem = (item, index, count) => {
+    const monthCenter = (xScale(item.month) || margin.left) + xScale.bandwidth() / 2;
+    const groupWidth = count * MONTHLY_TOTAL_BAR_WIDTH + Math.max(0, count - 1) * MONTHLY_TOTAL_BAR_GAP;
+    return monthCenter - groupWidth / 2 + index * (MONTHLY_TOTAL_BAR_WIDTH + MONTHLY_TOTAL_BAR_GAP);
+  };
+  const barXByKey = (item, bar) => {
+    const bars = barsForItem(item);
+    const index = Math.max(0, bars.findIndex((candidate) => candidate.key === bar.key));
+    return barXForItem(item, index, bars.length || 1);
+  };
   const buildTooltip = (item, bar) => {
     const value = bar.type === "actual" ? item.actual : bar.value;
-    const monthScale = localBarScale(item);
-    const x = (xScale(item.month) || margin.left) + (monthScale(bar.key) || 0) + monthScale.bandwidth() / 2;
+    const x = barXByKey(item, bar) + MONTHLY_TOTAL_BAR_WIDTH / 2;
     return {
       id: `monthly-${bar.key}-${item.month}`,
       activeIds: [`monthly-${bar.key}-${item.month}`],
@@ -3445,12 +5077,12 @@ function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
           </text>
         ))}
         {data.flatMap((item) => {
-          const monthScale = localBarScale(item);
-          return barsForItem(item).map((bar) => {
+          const monthBars = barsForItem(item);
+          return monthBars.map((bar, barIndex) => {
             const barId = `monthly-${bar.key}-${item.month}`;
             const value = bar.type === "actual" ? item.actual : bar.value;
             const isActive = activeBar?.activeIds?.includes(barId);
-            const x = (xScale(item.month) || margin.left) + (monthScale(bar.key) || 0);
+            const x = barXForItem(item, barIndex, monthBars.length);
             const y = yScale(value);
             const barHeight = Math.max(0, yScale(0) - y);
             if (bar.type === "actual") {
@@ -3467,7 +5099,7 @@ function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
                       onMouseEnter={() => setActiveBar(buildTooltip(item, bar))}
                       onMouseLeave={() => setActiveBar(null)}
                       rx="2"
-                      width={monthScale.bandwidth()}
+                      width={MONTHLY_TOTAL_BAR_WIDTH}
                       x={x}
                       y={projectedY}
                     />
@@ -3478,7 +5110,7 @@ function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
                     onMouseEnter={() => setActiveBar(buildTooltip(item, bar))}
                     onMouseLeave={() => setActiveBar(null)}
                     rx="2"
-                    width={monthScale.bandwidth()}
+                    width={MONTHLY_TOTAL_BAR_WIDTH}
                     x={x}
                     y={actualY}
                   />
@@ -3493,7 +5125,7 @@ function ForecastMonthlyTotalsChart({ totals = [], forecastVersions = [] }) {
                 onMouseEnter={() => setActiveBar(buildTooltip(item, bar))}
                 onMouseLeave={() => setActiveBar(null)}
                 rx="2"
-                width={monthScale.bandwidth()}
+                width={MONTHLY_TOTAL_BAR_WIDTH}
                 x={x}
                 y={y}
               />
@@ -4166,10 +5798,10 @@ function ForecastAdSignalStrip({ data, pricePoints = [], variant = "compact" }) 
   );
 }
 
-function DetailSection({ title, children }) {
+function DetailSection({ title, tooltip = "", children }) {
   return (
     <section className="detail-section">
-      <h3>{title}</h3>
+      <h3 title={tooltip || undefined}>{title}</h3>
       {children}
     </section>
   );
@@ -4178,14 +5810,25 @@ function DetailSection({ title, children }) {
 function DetailGrid({ rows }) {
   return (
     <dl className="detail-grid">
-      {rows.map(([label, value]) => (
-        <div key={label}>
+      {rows.map((row) => {
+        const { label, value, tooltip } = normalizeDetailRow(row);
+        return (
+        <div key={label} title={tooltip || undefined}>
           <dt>{label}</dt>
           <dd>{value === null || value === undefined || value === "" ? "-" : value}</dd>
         </div>
-      ))}
+        );
+      })}
     </dl>
   );
+}
+
+function normalizeDetailRow(row) {
+  if (Array.isArray(row)) {
+    const [label, value, tooltip = ""] = row;
+    return { label, value, tooltip };
+  }
+  return row || { label: "-", value: "-", tooltip: "" };
 }
 
 function RootCauseSummary({
@@ -4428,13 +6071,23 @@ function diagnosisSignalAnomalies(diagnosis) {
 function RiskBadges({ item }) {
   const stockoutLevel = item.stockout_risk_level || "normal";
   const overstockLevel = item.overstock_risk_level || "normal";
+  const stockoutTitle = [
+    riskBadgeLabel(stockoutRiskBadgeLabels, stockoutLevel),
+    formatStockoutAssertion(item),
+    STOCKOUT_RULE_TOOLTIP,
+  ].filter(Boolean).join("\n");
+  const overstockTitle = [
+    riskBadgeLabel(overstockRiskBadgeLabels, overstockLevel),
+    formatOverstockAssertion(item),
+    overstockRuleTooltip(item.sales_property),
+  ].filter(Boolean).join("\n");
 
   return (
     <div className="risk-stack">
-      <span className={`risk-pill stockout ${stockoutLevel}`}>
+      <span className={`risk-pill stockout ${stockoutLevel}`} title={stockoutTitle}>
         {riskBadgeLabel(stockoutRiskBadgeLabels, stockoutLevel)}
       </span>
-      <span className={`risk-pill overstock ${overstockLevel}`}>
+      <span className={`risk-pill overstock ${overstockLevel}`} title={overstockTitle}>
         {riskBadgeLabel(overstockRiskBadgeLabels, overstockLevel)}
       </span>
     </div>
@@ -4589,7 +6242,7 @@ async function askSkuAssistant(item, question, forecastReview = null, firstLegSh
     const diagnosis = await fetchSkuDiagnosis(item, question, forecastReview, firstLegShipments);
     return formatSkuDiagnosisReply(diagnosis);
   }
-  const response = await fetch(`${API_BASE_URL}/agent/run`, {
+  const response = await apiFetch(`${API_BASE_URL}/agent/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ text: buildSkuAssistantPrompt(item, question) }),
@@ -4610,7 +6263,7 @@ async function fetchSkuDiagnosis(item, question = "生成 SKU 全链路诊断", 
     ? { first_leg_shipments: shipmentRows, shipments: shipmentRows }
     : {};
   const enrichedItem = { ...item, ...reviewPayload, ...shipmentPayload };
-  const response = await fetch(`${API_BASE_URL}/control-tower/sku-diagnosis/analyze`, {
+  const response = await apiFetch(`${API_BASE_URL}/control-tower/sku-diagnosis/analyze`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ item: enrichedItem, question }),
@@ -4620,7 +6273,7 @@ async function fetchSkuDiagnosis(item, question = "生成 SKU 全链路诊断", 
 }
 
 async function fetchSkuShippingCost(item) {
-  const response = await fetch(`${API_BASE_URL}/control-tower/sku-shipping-cost`, {
+  const response = await apiFetch(`${API_BASE_URL}/control-tower/sku-shipping-cost`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ item }),
@@ -4630,15 +6283,12 @@ async function fetchSkuShippingCost(item) {
 }
 
 async function fetchFirstLegShipments(item) {
+  const fnsku = String(item?.fnsku || "").trim();
+  if (!fnsku) {
+    return { query: { material_codes: [] }, row_count: 0, shipments: [] };
+  }
   const params = new URLSearchParams();
-  [
-    ["material_code", item.material_code],
-    ["msku", item.msku],
-    ["fnsku", item.fnsku],
-    ["asin", item.asin],
-  ].forEach(([key, value]) => {
-    if (value) params.set(key, value);
-  });
+  params.set("fnsku", fnsku);
   params.set("latest_only", "true");
   params.set("limit", "200");
   const endpoint = `/control-tower/first-leg-shipments?${params.toString()}`;
@@ -4667,7 +6317,7 @@ async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await fetch(url, { ...options, credentials: "include", signal: controller.signal });
   } finally {
     clearTimeout(timeoutId);
   }
@@ -4755,7 +6405,7 @@ function formatDirectionSection(section) {
   }
   if (section.sales_potential) {
     lines.push(
-      `- 销售潜力：${section.sales_potential.label || "-"}；评分 ${formatNumber(section.sales_potential.score)}；销量/广告费 ${section.sales_potential.weekly_sales_ad_ratio ?? "-"}；${section.sales_potential.sales_curve || "-"}`
+      `- 销售潜力：${section.sales_potential.label || "-"}；销量/广告费 ${section.sales_potential.weekly_sales_ad_ratio ?? "-"}；${section.sales_potential.sales_curve || "-"}`
     );
   }
   if (section.stockout_and_sales_control) {
@@ -4894,14 +6544,16 @@ function buildSkuAssistantPrompt(item, question) {
   const shortage = piciShortageWindowSummary(item);
   return [
     "你是 PMC 库存控制塔里的 SKU 助手。请只围绕下面这个 SKU 上下文回答，回答要简洁、可执行。",
+    "回答限制：不要输出风险分、评分、score、最高分，也不要输出“命中等级”列；解释冗余时只按可售天数、合理阈值、冗余判定阈值、对应动作说明。",
     `SKU: ${item.material_code}`,
     `名称: ${item.sku_name || "-"}`,
     `店铺/国家: ${item.store_name || "-"} / ${item.country_code || item.shipments_country || "-"}`,
     `销售属性: ${item.sales_property || "-"}`,
-    `风险: ${item.warning_type || "-"}，整体等级 ${riskLabels[item.risk_level] || item.risk_level || "-"}`,
+    `风险: ${item.warning_type || "-"}，处理等级 ${riskLabels[item.risk_level] || item.risk_level || "-"}`,
     `断货: ${formatPiciGap(item)}，合计 ${formatNumber(shortage.totalDays)} 天，最大缺口 ${formatNumber(item.pici_min_gap_quantity)}`,
     `库存: 总 ${formatNumber(item.total_inventory)}，FBA ${formatNumber(item.fba_sellable)}，在途 ${formatNumber(item.inbound_total)}，海外 ${formatNumber(item.overseas_inventory)}，本地 ${formatNumber(item.local_inventory)}`,
     `需求: 区间销量 ${formatNumber(item.daily_sales_volume)}，7天 ${formatNumber(item.demand_7d)}，30天 ${formatNumber(item.demand_30d)}，日均 ${formatNumber(item.daily_demand)}`,
+    `冗余阈值提示: ${formatOverstockRuleHintText(item.sales_property)}`,
     `冗余原因: ${item.evidence?.overstock_reason || "-"}`,
     `异常标记: ${(item.evidence?.risk_flags || []).map((flag, index) => normalizeRiskFlag(flag, index).reason).join("；") || "-"}`,
     `建议动作: ${item.suggested_action || "-"}`,
@@ -4934,7 +6586,7 @@ function localSkuChatReply(item, question) {
       `库存情况：总库存 ${formatNumber(item.total_inventory)}，FBA可售 ${formatNumber(item.fba_sellable)}，海外 ${formatNumber(item.overseas_inventory)}，本地 ${formatNumber(item.local_inventory)}，在途 ${formatNumber(item.inbound_total)}，预计7天 ${formatNumber(item.projected_7d)}。`,
       `售卖情况：销售属性 ${item.sales_property || "-"}，区间销量 ${formatNumber(item.daily_sales_volume)}，7天需求 ${formatNumber(item.demand_7d)}，30天需求 ${formatNumber(item.demand_30d)}，日均 ${formatNumber(item.daily_demand)}。`,
       `断货风险：${formatPiciGap(item)}，合计断货 ${formatNumber(shortage.totalDays)} 天，关键缺口 ${item.pici_key_gap || "-"}。`,
-      `冗余风险：${riskLabels[item.overstock_risk_level] || item.overstock_risk_level || "正常"}；${item.evidence?.overstock_reason || "当前未返回具体冗余原因"}。`,
+      `冗余提示：${formatOverstockRuleHintText(item.sales_property)}；${item.evidence?.overstock_reason || "当前未返回具体冗余原因"}。`,
       `归因：${item.stockout_risk_level !== "normal" && item.overstock_risk_level !== "normal" ? "断货和冗余并存，优先按库存位置、库龄和补货节奏错配处理。" : item.suggested_action || "暂无明确异常。"}`,
       `补救措施：先核查 chazhi 和在途覆盖；能转化库存则调拨/催上架，不能覆盖则复核采购补救；若命中冗余，同步冻结非必要采购和发货，交由销售清货。`,
     ].join("\n");
@@ -4943,7 +6595,7 @@ function localSkuChatReply(item, question) {
     return `${item.material_code} 当前${formatPiciGap(item)}，合计断货 ${formatNumber(shortage.totalDays)} 天。优先看 FBA 可售 ${formatNumber(item.fba_sellable)}、在途 ${formatNumber(item.inbound_total)} 和 chazhi 缺口 ${item.pici_key_gap || "-"}，再判断是否加急发货或补采购。`;
   }
   if (question.includes("冗余")) {
-    return `${item.material_code} 的冗余等级是 ${riskLabels[item.overstock_risk_level] || item.overstock_risk_level || "-"}。依据是：${item.evidence?.overstock_reason || "当前未返回具体冗余原因"}。如果同时断货，通常说明库存位置或库龄结构有问题，不是简单总量不足。`;
+    return `${item.material_code} 的冗余依据是：${item.evidence?.overstock_reason || "当前未返回具体冗余原因"}。${formatOverstockRuleHintText(item.sales_property)}。如果同时断货，通常说明库存位置或库龄结构有问题，不是简单总量不足。`;
   }
   if (question.includes("异常")) {
     return flags.length
@@ -5093,6 +6745,7 @@ function piciShortageWindowSummary(item, simulation = null, options = {}) {
     const lastDay = fishboneDays[fishboneDays.length - 1]?.day || activeShortageStart;
     segments.push(formatShortageSegment(activeShortageStart, lastDay - activeShortageStart + 1));
   }
+  const slowShipEndDay = shippingSafetyEndDayForItem(item, safetyStockDaysForSimulation(simulation, item));
   return {
     totalDays,
     firstStartDay: firstStartDay ?? item.pici_first_shortage_days ?? 0,
@@ -5101,7 +6754,7 @@ function piciShortageWindowSummary(item, simulation = null, options = {}) {
     urgentAirReplenishmentWindow: summarizeSupplyWindow(fishboneDays, 10, 19),
     standardAirReplenishmentWindow: summarizeSupplyWindow(fishboneDays, 20, 45),
     fastReplenishmentWindow: summarizeSupplyWindow(fishboneDays, 46, 60),
-    slowReplenishmentWindow: summarizeSupplyWindow(fishboneDays, 61, Number.POSITIVE_INFINITY),
+    slowReplenishmentWindow: summarizeSupplyWindow(fishboneDays, 61, slowShipEndDay),
     fishboneWeeks: buildSupplyFishboneWeeks(fishboneDays, arrivals),
   };
 }
@@ -5555,8 +7208,10 @@ function roundToOne(value) {
 
 function buildSupplyFishboneWeeks(days, arrivals) {
   if (!days.length) return [];
-  const maxDay = Math.max(...days.map((day) => day.day));
+  const actualMaxDay = Math.max(...days.map((day) => day.day));
+  const maxDay = actualMaxDay + FISHBONE_EXTRA_WEEK_DAYS;
   const dayByNumber = new Map(days.map((day) => [day.day, day]));
+  const lastDay = days.find((day) => day.day === actualMaxDay) || days[days.length - 1];
   const weekCount = Math.ceil(maxDay / 7);
 
   return Array.from({ length: weekCount }, (_, index) => {
@@ -5566,7 +7221,8 @@ function buildSupplyFishboneWeeks(days, arrivals) {
     const weekDays = [];
 
     for (let day = startDay; day <= endDay; day += 1) {
-      weekDays.push(dayByNumber.get(day) || { day, status: "ok" });
+      const sourceDay = dayByNumber.get(day);
+      weekDays.push(sourceDay || projectedSupplyDay(lastDay, day));
     }
 
     return {
@@ -5578,6 +7234,23 @@ function buildSupplyFishboneWeeks(days, arrivals) {
       arrivals: arrivals.filter((arrival) => arrival.day >= startDay && arrival.day <= endDay),
     };
   });
+}
+
+function projectedSupplyDay(sourceDay, day) {
+  if (!sourceDay) return { day, status: "ok", projected: true };
+  return {
+    day,
+    status: sourceDay.status,
+    forecast: sourceDay.forecast,
+    originalForecast: sourceDay.originalForecast,
+    controlRatio: sourceDay.controlRatio,
+    controlSavedQuantity: sourceDay.controlSavedQuantity,
+    shortageQuantity: sourceDay.status === "shortage" ? sourceDay.shortageQuantity : 0,
+    replenishedQuantity: 0,
+    replenishmentChannel: "",
+    partialReplenished: false,
+    projected: true,
+  };
 }
 
 function parsePiciValue(value) {

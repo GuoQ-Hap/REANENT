@@ -9,6 +9,7 @@ from .inventory import (
     ShipmentVerificationTool,
     SimpleChatTool,
     ShortageTraceTool,
+    SkuFullChainDiagnosisTool,
     WeeklyShipmentPlanTool,
 )
 
@@ -24,5 +25,6 @@ __all__ = [
     "ShipmentVerificationTool",
     "SimpleChatTool",
     "ShortageTraceTool",
+    "SkuFullChainDiagnosisTool",
     "WeeklyShipmentPlanTool",
 ]

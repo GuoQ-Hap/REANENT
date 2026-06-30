@@ -64,6 +64,10 @@ def format_agent_reply(result: AgentRunResult) -> str:
         return str(chat_reply["reply"])
 
     sections: list[str] = []
+    sku_diagnosis = result.artifacts.get("sku_full_chain_diagnosis")
+    if isinstance(sku_diagnosis, dict):
+        sections.append(_format_sku_diagnosis(sku_diagnosis))
+
     if result.decisions:
         sections.append("**查询结果**")
         sections.append(_decision_table(result.decisions))
@@ -72,7 +76,7 @@ def format_agent_reply(result: AgentRunResult) -> str:
         sections.append("**建议动作**")
         sections.append(_action_table(result.decisions))
 
-    visible_artifacts = {key: value for key, value in result.artifacts.items() if key not in {"chat_reply", "attachments"}}
+    visible_artifacts = {key: value for key, value in result.artifacts.items() if key not in {"chat_reply", "attachments", "sku_full_chain_diagnosis"}}
     if visible_artifacts:
         sections.append("**已生成草稿 / 产物**")
         sections.append(_artifact_table(visible_artifacts))
@@ -89,6 +93,314 @@ def format_agent_reply(result: AgentRunResult) -> str:
     if not sections:
         return "我还没有拿到足够的信息。可以补充物料编码，比如 A100，或说明你要看库存、采购还是发货。"
     return "\n\n".join(item for item in sections if item)
+
+
+def _format_sku_diagnosis(diagnosis: dict[str, Any]) -> str:
+    if diagnosis.get("ai_reply"):
+        return str(diagnosis["ai_reply"])
+    directions = diagnosis.get("direction_recommendations") if isinstance(diagnosis.get("direction_recommendations"), dict) else {}
+    if directions:
+        lines = [
+            f"**SKU 全链路诊断：{diagnosis.get('material_code', '-')}**",
+            f"整体状态：{diagnosis.get('overall_status', '-')}；风险等级：{_risk_label(str(diagnosis.get('risk_level', '-')))}。",
+            "",
+            "**归因**",
+            *_root_cause_list(diagnosis.get("root_cause_analysis")),
+            "",
+            "**销售方向**",
+            *_direction_section_lines(directions.get("sales")),
+            "",
+            "**物流方向**",
+            *_direction_section_lines(directions.get("logistics")),
+            "",
+            "**计划方向**",
+            *_direction_section_lines(directions.get("plan")),
+        ]
+        return "\n".join(line for line in lines if line is not None)
+    stockout = diagnosis.get("stockout") if isinstance(diagnosis.get("stockout"), dict) else {}
+    overstock = diagnosis.get("overstock") if isinstance(diagnosis.get("overstock"), dict) else {}
+    inventory = diagnosis.get("inventory") if isinstance(diagnosis.get("inventory"), dict) else {}
+    sales = diagnosis.get("sales") if isinstance(diagnosis.get("sales"), dict) else {}
+    remedies = diagnosis.get("remedies") if isinstance(diagnosis.get("remedies"), list) else []
+    replenishment = diagnosis.get("replenishment_recommendation") if isinstance(diagnosis.get("replenishment_recommendation"), dict) else {}
+    cost_comparison = diagnosis.get("replenishment_cost_comparison") if isinstance(diagnosis.get("replenishment_cost_comparison"), dict) else {}
+    sales_recommendation = diagnosis.get("sales_recommendation") if isinstance(diagnosis.get("sales_recommendation"), dict) else {}
+    potential = diagnosis.get("potential_analysis") if isinstance(diagnosis.get("potential_analysis"), dict) else {}
+    lines = [
+        f"**SKU 全链路诊断：{diagnosis.get('material_code', '-')}**",
+        f"整体状态：{diagnosis.get('overall_status', '-')}；风险等级：{_risk_label(str(diagnosis.get('risk_level', '-')))}。",
+        "",
+        "**当前SKU建议**",
+        _sku_current_advice(replenishment, sales_recommendation),
+        "",
+        "**库存情况**",
+        *_bullet_list(inventory.get("findings")),
+        "",
+        "**售卖情况**",
+        *_bullet_list(sales.get("findings")),
+        "",
+        "**断货风险**",
+        *_bullet_list(stockout.get("findings")),
+        "",
+        "**冗余风险**",
+        *_bullet_list(overstock.get("findings")),
+        "",
+        "**归因**",
+        *_bullet_list(diagnosis.get("attribution")),
+        "",
+        "**断货/冗余溯源**",
+        *_root_cause_list(diagnosis.get("root_cause_analysis")),
+        "",
+        "**处理逻辑**",
+        *_numbered_list(diagnosis.get("handling_logic")),
+        "",
+        "**补货倒计时与采购逻辑**",
+        *_countdown_list(diagnosis.get("replenishment_countdowns")),
+        _purchase_logic(replenishment),
+        "",
+        "**发货 / 控销节奏**",
+        *_logistics_plan_list(diagnosis.get("logistics_plan")),
+        "",
+        "**补货成本对比**",
+        *_cost_comparison_list(cost_comparison),
+        "",
+        "**销售建议**",
+        *_sales_recommendation_list(sales_recommendation),
+        "",
+        "**SKU潜力分析**",
+        *_potential_list(potential),
+        "",
+        "**外部动作Skill草稿**",
+        *_external_skill_list(diagnosis.get("external_action_skills")),
+        "",
+        "**补救措施**",
+        *_remedy_list(remedies),
+    ]
+    return "\n".join(line for line in lines if line is not None)
+
+
+def _sku_current_advice(replenishment: dict[str, Any], sales_recommendation: dict[str, Any]) -> str:
+    sales_control = replenishment.get("sales_control") or sales_recommendation.get("sales_control") or "控销方面：暂无。"
+    summary = replenishment.get("summary") or "补货方面：暂无。"
+    purchase = replenishment.get("purchase") if isinstance(replenishment.get("purchase"), dict) else {}
+    purchase_summary = purchase.get("summary") or "采购逻辑：暂无。"
+    return "\n".join([str(sales_control), str(summary), str(purchase_summary)])
+
+
+def _direction_section_lines(section: Any) -> list[str]:
+    if not isinstance(section, dict) or not section:
+        return ["- 暂无。"]
+    rows = [f"- {section.get('summary', '暂无。')}"]
+    if section.get("sales_performance"):
+        performance = section["sales_performance"]
+        demand = performance.get("demand_reference") if isinstance(performance.get("demand_reference"), dict) else {}
+        rows.append(
+            "- 售卖表现："
+            f"复盘实际销量 {_display(performance.get('actual_sales'))}；"
+            f"区间 {_display(performance.get('review_start_date'))} 至 {_display(performance.get('review_end_date'))}；"
+            f"{_display(performance.get('sales_curve'))}；"
+            f"需求参考 7天 {_display(demand.get('demand_7d'))}、30天 {_display(demand.get('demand_30d'))}、日均 {_display(demand.get('daily_demand'))}。"
+        )
+        rows.extend(_anomaly_lines(performance.get("sales_anomalies"), "销量异常"))
+    if section.get("sales_potential"):
+        potential = section["sales_potential"]
+        rows.append(
+            "- 销售潜力："
+            f"{_display(potential.get('label'))}；"
+            f"销量/广告费 {_display(potential.get('weekly_sales_ad_ratio'))}；"
+            f"销量曲线 {_display(potential.get('sales_curve'))}"
+        )
+        rows.extend(_anomaly_lines(potential.get("sales_anomalies"), "销量异常"))
+    if section.get("stockout_and_sales_control"):
+        control = section["stockout_and_sales_control"]
+        rows.append(
+            "- 断货/控销："
+            f"{_display(control.get('stockout_window'))}；"
+            f"控销 {_display(control.get('control_quantity'), default=0)} 件 / {_display(control.get('control_days'), default=0)} 天；"
+            f"{_display(control.get('recommendation'))}"
+        )
+    if section.get("forecast_accuracy"):
+        forecast = section["forecast_accuracy"]
+        rows.append(
+            "- 销售预测："
+            f"预测 {_display(forecast.get('forecast_quantity'))}，实际 {_display(forecast.get('actual_sales'))}，"
+            f"偏差 {_display(forecast.get('variance_percent'))}%；{_display(forecast.get('recommendation'))}"
+        )
+        rows.extend(_anomaly_lines(forecast.get("forecast_anomalies"), "预估异常"))
+    for item in section.get("detected_anomalies", []) if isinstance(section.get("detected_anomalies"), list) else []:
+        if isinstance(item, dict):
+            rows.append(f"- 异常：{item.get('cause', '-')}；证据：{item.get('evidence', '-')}；建议：{item.get('recommendation', '-')}")
+    for item in section.get("checks", []) if isinstance(section.get("checks"), list) else []:
+        rows.append(f"- 检查：{item}")
+    inventory = section.get("inventory_replenishment") if isinstance(section.get("inventory_replenishment"), dict) else {}
+    if inventory:
+        if inventory.get("strategy_label") or inventory.get("source"):
+            rows.append(f"- 计划口径：{inventory.get('strategy_label', '-')}；来源 {inventory.get('source', '-')}")
+        if inventory.get("pmc_recommendation") or inventory.get("replenishment_text"):
+            rows.append(f"- 程序补货建议：{inventory.get('pmc_recommendation') or inventory.get('replenishment_text')}")
+        rows.append(f"- 补货数量：合计 {inventory.get('total_replenishment_quantity', 0)} 件。")
+        purchase = inventory.get("purchase") if isinstance(inventory.get("purchase"), dict) else {}
+        if purchase:
+            rows.append(f"- 采购：建议采购草稿量 {purchase.get('suggested_purchase_quantity', 0)}；{purchase.get('summary', '-')}")
+        methods = inventory.get("methods") if isinstance(inventory.get("methods"), list) else []
+        for method in methods:
+            if isinstance(method, dict):
+                rows.append(f"- 补货方式：{method.get('channel_label', method.get('channel', '-'))} {method.get('suggested_quantity', 0)} 件，到货第 {method.get('arrival_day', '-')} 天。")
+    comparison = section.get("cost_comparison") if isinstance(section.get("cost_comparison"), dict) else {}
+    if comparison.get("recommendation"):
+        rows.append(f"- 成本：{comparison.get('recommendation')}")
+    actions = section.get("actions") if isinstance(section.get("actions"), list) else []
+    rows.extend(f"- 动作：{item}" for item in actions)
+    skills = section.get("skill_placeholders") if isinstance(section.get("skill_placeholders"), list) else []
+    rows.extend(f"- Skill草稿：{item.get('name', '-') if isinstance(item, dict) else item}（仅打印草稿）" for item in skills)
+    return rows
+
+
+def _anomaly_lines(values: Any, label: str) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return []
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            name = item.get("label") or item.get("type") or label
+            reason = item.get("reason") or item.get("evidence") or item.get("description") or "-"
+            rows.append(f"- {label}：{name}；原因：{reason}")
+        else:
+            rows.append(f"- {label}：{item}")
+    return rows
+
+
+def _display(value: Any, *, default: Any = "-") -> Any:
+    return default if value is None or value == "" else value
+
+
+def _bullet_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["- 暂无。"]
+    return [f"- {str(value)}" for value in values]
+
+
+def _numbered_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["1. 暂无。"]
+    return [f"{index}. {str(value)}" for index, value in enumerate(values, start=1)]
+
+
+def _remedy_list(values: list[Any]) -> list[str]:
+    if not values:
+        return ["- 暂无。"]
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            rows.append(f"- [{item.get('priority', '-')}] {item.get('owner', '-')}：{item.get('action', '-')}")
+        else:
+            rows.append(f"- {item}")
+    return rows
+
+
+def _logistics_plan_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["- 暂无。"]
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            rows.append(
+                f"- {item.get('window', '-')}：{item.get('summary', '-')}；建议量 {item.get('suggested_quantity', 0)}。"
+            )
+        else:
+            rows.append(f"- {item}")
+    return rows
+
+
+def _root_cause_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["- 暂无。"]
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            rows.append(f"- {item.get('cause', '-')}：{item.get('evidence', '-')}；建议：{item.get('recommendation', '-')}")
+        else:
+            rows.append(f"- {item}")
+    return rows
+
+
+def _countdown_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["- 暂无。"]
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            rows.append(
+                f"- {item.get('name', '-')} / {item.get('action', '-')}：{item.get('formula', '-')} = {item.get('countdown_days', '-')}天；{item.get('status', '-')}"
+            )
+        else:
+            rows.append(f"- {item}")
+    return rows
+
+
+def _purchase_logic(replenishment: dict[str, Any]) -> str:
+    purchase = replenishment.get("purchase") if isinstance(replenishment.get("purchase"), dict) else {}
+    if not purchase:
+        return "采购逻辑：暂无。"
+    return f"采购逻辑：建议采购草稿量 {purchase.get('suggested_purchase_quantity', 0)}；{purchase.get('summary', '-')}"
+
+
+def _cost_comparison_list(comparison: dict[str, Any]) -> list[str]:
+    rows = comparison.get("rows") if isinstance(comparison.get("rows"), list) else []
+    if not rows:
+        return ["- 暂无。"]
+    output = []
+    for item in rows:
+        if not isinstance(item, dict):
+            continue
+        qty = item.get("suggested_quantity", 0)
+        unit_cost = item.get("unit_shipping_cost_cny")
+        total_cost = item.get("estimated_cost_cny")
+        cost_text = "未拿到重量，无法估总成本" if total_cost is None else f"单件 {unit_cost}，总成本 {total_cost}"
+        output.append(f"- {item.get('channel_label', item.get('channel', '-'))}：建议量 {qty}，{cost_text}，到货第{item.get('arrival_day', '-')}天。")
+    output.append(f"- 建议：{comparison.get('recommendation', '-')}")
+    return output
+
+
+def _sales_recommendation_list(recommendation: dict[str, Any]) -> list[str]:
+    if not recommendation:
+        return ["- 暂无。"]
+    rows = [
+        f"- {recommendation.get('sales_control', '控销方面：暂无。')}",
+        f"- {recommendation.get('stockout_projection', '-')}",
+        f"- 广告/价格复盘：{recommendation.get('ad_and_price_review', '-')}",
+    ]
+    actions = recommendation.get("actions") if isinstance(recommendation.get("actions"), list) else []
+    rows.extend(f"- {action}" for action in actions)
+    return rows
+
+
+def _potential_list(potential: dict[str, Any]) -> list[str]:
+    if not potential:
+        return ["- 暂无。"]
+    rows = [
+        f"- 销售潜力：{potential.get('label', '-')}",
+        f"- 最有利销售建议：{potential.get('best_for_sales', '-')}",
+    ]
+    basis = potential.get("basis") if isinstance(potential.get("basis"), list) else []
+    rows.extend(f"- {item}" for item in basis)
+    missing = potential.get("missing_data") if isinstance(potential.get("missing_data"), list) else []
+    if missing:
+        rows.append(f"- 待补数据：{', '.join(str(item) for item in missing)}")
+    return rows
+
+
+def _external_skill_list(values: Any) -> list[str]:
+    if not isinstance(values, list) or not values:
+        return ["- 暂无。"]
+    rows = []
+    for item in values:
+        if isinstance(item, dict):
+            status = "已实现" if item.get("implemented") else "占位，仅打印动作草稿"
+            rows.append(f"- {item.get('name', '-')}（{item.get('owner', '-')}）：{status}；{item.get('description', '-')}")
+        else:
+            rows.append(f"- {item}")
+    return rows
 
 
 def wants_excel_attachment(text: str) -> bool:

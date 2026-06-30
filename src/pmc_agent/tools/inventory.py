@@ -8,6 +8,7 @@ from pmc_agent.connectors.base import BusinessSystemConnector
 from pmc_agent.config import InventoryPolicy
 from pmc_agent.domain import CaseRecord, ControlDecision, InventorySnapshot, Material, RiskLevel, RiskSignal
 from pmc_agent.schema_catalog import FieldPack
+from pmc_agent.sku_diagnosis import diagnose_sku_full_chain_with_ai
 
 
 logger = get_logger(__name__)
@@ -180,6 +181,34 @@ class ShortageTraceTool:
                 )
         logger.info("shortage trace generated", extra=log_extra("shortage_trace_generated", result_size=len(decisions)))
         return decisions
+
+
+@dataclass
+class SkuFullChainDiagnosisTool:
+    connector: Any | None = None
+    name: str = "sku_full_chain_diagnosis"
+    description: str = "Diagnose SKU inventory, sales, stockout risk, overstock risk, attribution, handling logic, and remedies."
+
+    def run(
+        self,
+        material_code: str | None = None,
+        store_name: str | None = None,
+        country_code: str | None = None,
+        shipments_country: str | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        diagnosis = diagnose_sku_full_chain_with_ai(
+            material_code,
+            store_name=store_name,
+            country_code=country_code,
+            shipments_country=shipments_country,
+            connector=self.connector,
+        )
+        logger.info(
+            "sku full chain diagnosis generated",
+            extra=log_extra("sku_full_chain_diagnosis_generated", material_code=str(diagnosis.get("material_code") or "-"), risk_level=str(diagnosis.get("risk_level") or "-")),
+        )
+        return diagnosis
 
 
 @dataclass

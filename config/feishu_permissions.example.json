@@ -1,0 +1,107 @@
+{
+  "admin_open_ids": [
+    "ou_admin_open_id"
+  ],
+  "admin_user_ids": [],
+  "default_features": [
+    "overview",
+    "detail",
+    "warehouse",
+    "standards",
+    "sku_diagnosis",
+    "logistics_detail",
+    "agent_chat"
+  ],
+  "rules": [
+    {
+      "id": "sales-north-america-manager",
+      "role": "sales_manager",
+      "match": {
+        "department_ids": [
+          "od_feishu_sales_department_id"
+        ],
+        "department_names": [
+          "北美销售部"
+        ]
+      },
+      "features": [
+        "overview",
+        "detail",
+        "warehouse",
+        "standards",
+        "sku_diagnosis",
+        "logistics_detail",
+        "export",
+        "agent_chat"
+      ],
+      "data_scope": {
+        "sales_department": [
+          "North America"
+        ]
+      }
+    },
+    {
+      "id": "product-manager",
+      "role": "product_manager",
+      "match": {
+        "department_names": [
+          "产品部"
+        ]
+      },
+      "features": [
+        "overview",
+        "detail",
+        "warehouse",
+        "standards",
+        "sku_diagnosis",
+        "logistics_detail",
+        "export",
+        "agent_chat"
+      ],
+      "data_scope": {
+        "product_manager": [
+          "$user.name"
+        ]
+      }
+    },
+    {
+      "id": "purchase-readonly",
+      "role": "purchase",
+      "match": {
+        "department_names": [
+          "采购部"
+        ]
+      },
+      "features": [
+        "overview",
+        "detail",
+        "warehouse",
+        "standards",
+        "sku_diagnosis",
+        "logistics_detail",
+        "agent_chat"
+      ],
+      "data_scope": {
+        "store_name": [
+          "Amazon US"
+        ]
+      }
+    }
+  ],
+  "default_policy": {
+    "id": "default-self",
+    "role": "member",
+    "features": [
+      "overview",
+      "detail",
+      "standards",
+      "sku_diagnosis",
+      "agent_chat"
+    ],
+    "data_scope": {
+      "salesman": [
+        "$user.name"
+      ]
+    }
+  }
+}

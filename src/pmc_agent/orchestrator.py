@@ -23,6 +23,7 @@ from pmc_agent.tools import (
     ShipmentVerificationTool,
     SimpleChatTool,
     ShortageTraceTool,
+    SkuFullChainDiagnosisTool,
     WeeklyShipmentPlanTool,
 )
 from pmc_agent.verifier import verify_decisions
@@ -53,6 +54,7 @@ class PmcAgent:
             tools={
                 "inventory_snapshot": InventorySnapshotTool(connector=db_connector),
                 "simple_chat": SimpleChatTool(),
+                "sku_full_chain_diagnosis": SkuFullChainDiagnosisTool(connector=db_connector),
                 "inventory_risk": InventoryRiskTool(policy=config.inventory_policy, connector=db_connector),
                 "control_tower": ControlTowerTool(connector=db_connector),
                 "shortage_trace": ShortageTraceTool(connector=db_connector),
@@ -115,6 +117,8 @@ class PmcAgent:
             try:
                 if step.tool == "simple_chat":
                     artifacts["chat_reply"] = self.tools.run(step.tool, query=request.text)
+                elif step.tool == "sku_full_chain_diagnosis":
+                    artifacts["sku_full_chain_diagnosis"] = self.tools.run(step.tool, material_code=request.material_code)
                 elif step.tool == "inventory_snapshot":
                     snapshots = self.tools.run(step.tool, material_code=request.material_code, field_pack=field_pack)
                 elif step.tool == "inventory_risk":

@@ -8,6 +8,7 @@ from typing import Any
 class TaskType(str, Enum):
     SIMPLE_CHAT = "simple_chat"
     CONTROL_TOWER = "control_tower"
+    SKU_FULL_CHAIN_DIAGNOSIS = "sku_full_chain_diagnosis"
     INVENTORY_RISK = "inventory_risk"
     SHORTAGE_TRACE = "shortage_trace"
     SHIPMENT_VERIFICATION = "shipment_verification"

@@ -14,6 +14,7 @@ class SchemaCatalogTests(unittest.TestCase):
         self.assertIn("fnsku", fields)
         self.assertIn("msku_sales_property", fields)
         self.assertIn("seasonality", fields)
+        self.assertIn("msku_life_process", fields)
         self.assertIn("procurement_plan_quantity", fields)
         self.assertNotIn("basic_purchase_quantity", fields)
         self.assertNotIn("jypurchase_quantity", fields)

@@ -797,6 +797,8 @@ def infer_task_type(text: str) -> TaskType:
     lowered = text.lower()
     if is_simple_chat(text):
         return TaskType.SIMPLE_CHAT
+    if any(word in text for word in ("全链路诊断", "全链路分析", "sku诊断", "SKU诊断", "库存情况", "售卖情况")):
+        return TaskType.SKU_FULL_CHAIN_DIAGNOSIS
     if any(word in text for word in ("断货", "追因", "原因链")):
         return TaskType.SHORTAGE_TRACE
     if "发货" in text and any(word in text for word in ("验证", "复算", "校验")):

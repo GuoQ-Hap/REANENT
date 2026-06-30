@@ -24,6 +24,7 @@ from pmc_agent.model_io import generate_time_id, record_model_interaction
 from pmc_agent.model_router import ModelAction, ModelRouteRequest, ModelRouter
 from pmc_agent.query_spec import QuerySpec
 from pmc_agent.schema_catalog import FieldPack, normalize_field_pack
+from pmc_agent.sku_diagnosis import diagnose_sku_full_chain
 from pmc_agent.tools.graph_metadata import GraphMetadataTool
 from pmc_agent.tools.inventory import InventoryRiskTool, KnowledgeLookupTool
 
@@ -37,6 +38,7 @@ class AgenticAction(str, Enum):
     INSPECT_RUN_TRACE = "inspect_run_trace"
     RUN_SERIAL_SPACE = "run_serial_space"
     QUERY_INVENTORY_SNAPSHOT = "query_inventory_snapshot"
+    SKU_FULL_CHAIN_DIAGNOSIS = "sku_full_chain_diagnosis"
     EVALUATE_INVENTORY_RISK = "evaluate_inventory_risk"
     KNOWLEDGE_LOOKUP = "knowledge_lookup"
     MEMORY_LOOKUP = "memory_lookup"
@@ -304,8 +306,33 @@ def _inventory_filters_schema() -> dict[str, Any]:
                 "enum": ["", "demand_desc", "risk_then_demand"],
                 "description": "Controlled ordering for portfolio queries.",
             },
+            "store_name": {"type": "string", "description": "Optional store filter for SKU diagnosis."},
+            "country_code": {"type": "string", "description": "Optional marketplace country filter for SKU diagnosis."},
+            "shipments_country": {"type": "string", "description": "Optional shipment country filter for SKU diagnosis."},
+            "seasonality": {"type": "string", "description": "Optional seasonality filter from ads_lingxing_all_warehouse_new.seasonality."},
+            "sales_department": {"type": "string", "description": "Optional sales department filter, mapped to sales_apartment."},
+            "salesman": {"type": "string", "description": "Optional salesperson filter from ads_lingxing_all_warehouse_new.salesman."},
+            "product_manager": {"type": "string", "description": "Optional product manager filter from ads_lingxing_all_warehouse_new.product_manager."},
+            "seller_id": {"type": "string", "description": "Optional seller account id filter from ads_lingxing_all_warehouse_new.seller_id."},
+            "product_property": {"type": "string", "description": "Optional product property filter, mapped to msku_product_property."},
+            "msku_status": {"type": "string", "description": "Optional MSKU status filter from ads_lingxing_all_warehouse_new.msku_status."},
         },
-        "required": ["sales_property", "risk_only", "positive_demand", "order_by"],
+        "required": [
+            "sales_property",
+            "risk_only",
+            "positive_demand",
+            "order_by",
+            "store_name",
+            "country_code",
+            "shipments_country",
+            "seasonality",
+            "sales_department",
+            "salesman",
+            "product_manager",
+            "seller_id",
+            "product_property",
+            "msku_status",
+        ],
     }
 
 
@@ -525,6 +552,15 @@ def _agentic_function_tools() -> list[dict[str, Any]]:
             },
         ),
         _function_tool(
+            AgenticAction.SKU_FULL_CHAIN_DIAGNOSIS.value,
+            "Run deterministic SKU full-chain diagnosis: inventory, sales, stockout risk, overstock risk, attribution, handling logic, and remedies.",
+            {
+                "material_code": {"type": "string"},
+                "filters": _inventory_filters_schema(),
+                "reasoning_summary": {"type": "string"},
+            },
+        ),
+        _function_tool(
             AgenticAction.EVALUATE_INVENTORY_RISK.value,
             "Evaluate inventory risk from the latest inventory snapshots.",
             {"reasoning_summary": {"type": "string"}},
@@ -735,6 +771,7 @@ class AgenticPmcLoop:
                             "需要查询制度、SOP、规则或知识库片段时，可以选择 knowledge_lookup；它会优先走向量库连接，查不到时返回内置知识提示。",
                             "需要查询长期沉淀的用户偏好、人工反馈、业务规则或失败处理经验时，可以选择 memory_lookup；它不会返回实时库存数量。",
                             "需要判断应该查哪张表、某张表有哪些字段、字段注释或字段属于哪个业务概念时，选择 graph_metadata_lookup；它只查询 Neo4j 元数据图谱，不返回实时库存数量。",
+                            "用户要求 SKU 全链路诊断、库存情况+售卖情况+断货/冗余归因+补救措施时，优先选择 sku_full_chain_diagnosis。",
                             "最终回答前必须自审；如果自审不通过，返回 final_answer 且 arguments.self_review_passed=false，并写明 review_notes，程序会在同一个 20 轮预算内继续。",
                             "自审失败后可以选择 inspect_run_trace 查看路径、行为、关键提示词和剩余轮次，再生成新一轮尝试。",
                             "最近对话上下文默认隐藏；如果本轮问题依赖上一轮对象、代词、继续追问或省略范围，先选择 decide_context 并设置 use_context=true。",
@@ -952,6 +989,25 @@ class AgenticPmcLoop:
                     "snapshots": [_to_jsonable(item) for item in rows],
                     "row_count": len(rows),
                 }
+
+            if decision.action == AgenticAction.SKU_FULL_CHAIN_DIAGNOSIS:
+                self._emit_action_running(decision.action.value, "全链路诊断", "正在分析库存、售卖、断货、冗余、归因和补救措施。")
+                material_code = _optional_str(decision.arguments.get("material_code"))
+                if not material_code:
+                    return {
+                        "ok": False,
+                        "error_type": "MissingModelArgument",
+                        "error": "sku_full_chain_diagnosis requires action.arguments.material_code.",
+                    }
+                filters = decision.arguments.get("filters") if isinstance(decision.arguments.get("filters"), dict) else {}
+                diagnosis = diagnose_sku_full_chain(
+                    material_code=material_code,
+                    store_name=_optional_str(filters.get("store_name")),
+                    country_code=_optional_str(filters.get("country_code")),
+                    shipments_country=_optional_str(filters.get("shipments_country")),
+                    connector=self.db_connector,
+                )
+                return {"ok": True, "diagnosis": diagnosis.to_dict()}
 
             if decision.action == AgenticAction.EVALUATE_INVENTORY_RISK:
                 self._emit_action_running(decision.action.value, "调用工具", "正在计算库存风险。")
@@ -1339,7 +1395,7 @@ def _available_tools() -> list[dict[str, Any]]:
                 "tasks": [
                     {
                         "kind": "tool",
-                        "action": "decide_context | query_inventory_snapshot | evaluate_inventory_risk | knowledge_lookup | memory_lookup | graph_metadata_lookup",
+                        "action": "decide_context | sku_full_chain_diagnosis | query_inventory_snapshot | evaluate_inventory_risk | knowledge_lookup | memory_lookup | graph_metadata_lookup",
                         "arguments": "same arguments as the selected tool action",
                     },
                     {
@@ -1354,6 +1410,14 @@ def _available_tools() -> list[dict[str, Any]]:
                         ],
                     },
                 ]
+            },
+        },
+        {
+            "name": AgenticAction.SKU_FULL_CHAIN_DIAGNOSIS.value,
+            "description": "Run deterministic SKU full-chain diagnosis from existing control-tower data: inventory, sales, stockout risk, overstock risk, attribution, handling logic, and remedies.",
+            "arguments": {
+                "material_code": "required SKU/MSKU/FNSKU/ASIN-like code",
+                "filters": "optional store_name, country_code, shipments_country",
             },
         },
         {
@@ -1579,6 +1643,26 @@ def _inventory_filters_from_arguments(arguments: dict[str, Any]) -> dict[str, An
 
     filters["risk_only"] = bool(filters.get("risk_only"))
     filters["positive_demand"] = bool(filters.get("positive_demand"))
+    for source, target in (
+        ("store_name", "store_name"),
+        ("country_code", "country_code"),
+        ("shipments_country", "shipments_country"),
+        ("seasonality", "seasonality"),
+        ("sales_department", "sales_apartment"),
+        ("sales_apartment", "sales_apartment"),
+        ("salesman", "salesman"),
+        ("sales_person", "salesman"),
+        ("product_manager", "product_manager"),
+        ("seller_id", "seller_id"),
+        ("product_property", "msku_product_property"),
+        ("msku_product_property", "msku_product_property"),
+        ("msku_status", "msku_status"),
+    ):
+        value = _optional_str(filters.get(source))
+        if value:
+            filters[target] = value
+        elif source == target:
+            filters.pop(target, None)
     order_by = _optional_str(filters.get("order_by"))
     filters["order_by"] = order_by if order_by in {"demand_desc", "risk_then_demand"} else ""
     return filters

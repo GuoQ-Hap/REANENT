@@ -13,6 +13,38 @@ from pmc_agent.schema_catalog import ALL_WAREHOUSE_CATALOG
 
 
 PICI_HORIZONS = (7, 14, 21, 28, 35, 42, 49, 56, 63, 70, 77, 84, 98)
+OVERSTOCK_AVAILABLE_DAY_RULES: dict[int, dict[str, Any]] = {
+    1: {
+        "label": "可售天数1",
+        "thresholds": {"boom_wang": 90, "flat_stagnant": 60},
+        "action": "重点监控运营清货进度",
+    },
+    2: {
+        "label": "可售天数2",
+        "thresholds": {"boom_wang": 120, "flat_stagnant": 105},
+        "action": "禁止向FBA补货",
+    },
+    3: {
+        "label": "可售天数3",
+        "thresholds": {"boom_wang": 120, "flat_stagnant": 105},
+        "action": "禁止向FBA补货",
+    },
+    4: {
+        "label": "可售天数4",
+        "thresholds": {"boom_wang": 120, "flat_stagnant": 105},
+        "action": "禁止向海外仓补货；禁止向FBA补货",
+    },
+    5: {
+        "label": "可售天数5",
+        "thresholds": {"boom_wang": 180, "flat_stagnant": 150},
+        "action": "禁止本地仓补货",
+    },
+    6: {
+        "label": "可售天数6",
+        "thresholds": {"boom_wang": 180, "flat_stagnant": 150},
+        "action": "禁止本地仓补货；停止下采购单",
+    },
+}
 
 SHEET_NAMES = [
     "sheet1",
@@ -489,20 +521,36 @@ def _investigation_reason(row: dict[str, Any]) -> dict[str, Any]:
     chazhi_inventory = _parse_chazhi_inventory(_text(row.get("chazhi_0_7")))
     shortage_threshold = 4 if sales_property in {"爆", "旺"} else 1
     shortage = chazhi_inventory is not None and chazhi_inventory <= shortage_threshold
-    available_days_4 = _number(row.get("fnsku_available_days_4"))
-    overstock = available_days_4 >= 150
+    overstock_hits = _overstock_available_day_hits(row, sales_property)
+    overstock = bool(overstock_hits)
     shortage_qty = _min_chazhi_gap(row)
-    inventory = _number(row.get("fnsku_inventory_4")) or _chain_inventory(row)
-    forecast_150 = _number(row.get("future_90d_sales")) * 150 / 90 if _number(row.get("future_90d_sales")) else 0
-    redundant_qty = max(0, round(inventory - forecast_150, 2))
+    dominant_hit = (
+        max(overstock_hits, key=lambda item: item["days"] - item["threshold"])
+        if overstock_hits
+        else None
+    )
+    inventory = _number(row.get(f"fnsku_inventory_{dominant_hit['index']}")) if dominant_hit else 0
+    if not inventory and overstock:
+        inventory = _chain_inventory(row)
+    forecast_90 = _number(row.get("future_90d_sales"))
+    threshold_days = dominant_hit["threshold"] if dominant_hit else 0
+    forecast_threshold = forecast_90 * threshold_days / 90 if forecast_90 and threshold_days else 0
+    redundant_qty = max(0, round(inventory - forecast_threshold, 2))
     reasons = []
     actions = []
     if shortage:
-        reasons.append(f"chazhi_0_7库存量={chazhi_inventory}，{sales_property or '未知属性'}阈值<={shortage_threshold}")
+        reasons.append(
+            f"chazhi_0_7库存量={chazhi_inventory}，{sales_property or '未知属性'}阈值<={shortage_threshold}"
+        )
         actions.append("断货排查：核查库存、在途和补货计划")
     if overstock:
-        reasons.append(f"可售天数4={available_days_4}>=150，预计冗余量={redundant_qty}")
-        actions.append("冗余排查：冻结SKU、复核发货计划、控制补货")
+        hit_text = "；".join(
+            f"{hit['label']}({hit['group_label']})={hit['days']:g}>{hit['threshold']:g}"
+            for hit in overstock_hits
+        )
+        hit_actions = _unique_text([str(hit["action"]) for hit in overstock_hits])
+        reasons.append(f"{hit_text}，预计冗余量={redundant_qty}")
+        actions.append("冗余排查：冻结SKU、复核发货计划、" + "；".join(hit_actions))
     if shortage and overstock:
         sell_issue = "断货+冗余"
         owner = "PMC/运营"
@@ -525,6 +573,41 @@ def _investigation_reason(row: dict[str, Any]) -> dict[str, Any]:
         "reason_text": "；".join(reasons),
         "action": "；".join(actions),
     }
+
+
+def _overstock_available_day_hits(row: dict[str, Any], sales_property: str) -> list[dict[str, Any]]:
+    group = _sales_property_threshold_group(sales_property)
+    group_label = "平滞" if group == "flat_stagnant" else "爆旺"
+    hits = []
+    for index, rule in OVERSTOCK_AVAILABLE_DAY_RULES.items():
+        days = _number(row.get(f"fnsku_available_days_{index}"))
+        threshold = rule["thresholds"][group]
+        if days > threshold:
+            hits.append(
+                {
+                    "index": index,
+                    "label": rule["label"],
+                    "group_label": group_label,
+                    "days": days,
+                    "threshold": threshold,
+                    "action": rule["action"],
+                }
+            )
+    return hits
+
+
+def _sales_property_threshold_group(sales_property: str) -> str:
+    text = str(sales_property or "").strip()
+    return "flat_stagnant" if "平" in text or "滞" in text else "boom_wang"
+
+
+def _unique_text(values: list[str]) -> list[str]:
+    unique = []
+    for value in values:
+        text = value.strip()
+        if text and text not in unique:
+            unique.append(text)
+    return unique
 
 
 def _chain_inventory(row: dict[str, Any]) -> float:

@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>仓库资金控制塔</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="rail" aria-label="控制塔导航">
+        <div class="brand">
+          <span class="brand-mark">F</span>
+          <span>
+            <strong>资金塔</strong>
+            <small>Warehouse Funds</small>
+          </span>
+        </div>
+        <nav class="rail-nav" aria-label="视图">
+          <button class="nav-item is-active" data-view="overview" title="总览">
+            <span>⌂</span><b>总览</b>
+          </button>
+          <button class="nav-item" data-view="capital" title="占用资金">
+            <span>▦</span><b>占用</b>
+          </button>
+          <button class="nav-item" data-view="loss" title="损耗现金">
+            <span>△</span><b>损耗</b>
+          </button>
+          <button class="nav-item" data-view="formula" title="口径">
+            <span>ƒ</span><b>口径</b>
+          </button>
+        </nav>
+      </aside>
+
+      <main class="workspace">
+        <header class="topbar">
+          <div>
+            <h1>仓库资金控制塔</h1>
+            <p>按成本口径拆分库存资金、风险占用、在途资金和损耗现金</p>
+          </div>
+          <div class="toolbar">
+            <button id="refreshBtn" class="icon-btn" title="刷新真实数据">↻</button>
+            <button id="exportBtn" class="icon-btn" title="导出当前明细">↓</button>
+          </div>
+        </header>
+
+        <nav class="mobile-tabs" aria-label="移动端视图">
+          <button class="nav-item is-active" data-view="overview" title="总览">总览</button>
+          <button class="nav-item" data-view="capital" title="占用资金">占用</button>
+          <button class="nav-item" data-view="loss" title="损耗现金">损耗</button>
+          <button class="nav-item" data-view="formula" title="口径">口径</button>
+        </nav>
+
+        <section class="filters" aria-label="筛选">
+          <label>
+            <span>日期</span>
+            <select id="dateFilter"></select>
+          </label>
+          <label>
+            <span>仓库类型</span>
+            <select id="warehouseTypeFilter">
+              <option value="all">全部</option>
+              <option value="FBA">FBA</option>
+              <option value="海外仓">海外仓</option>
+              <option value="本地仓">本地仓</option>
+            </select>
+          </label>
+          <label>
+            <span>国家</span>
+            <select id="countryFilter"></select>
+          </label>
+          <label class="search-field">
+            <span>SKU / FNSKU / 仓库</span>
+            <input id="searchInput" type="search" placeholder="输入编码或仓库" />
+          </label>
+          <div class="segmented" role="tablist" aria-label="金额口径">
+            <button class="is-selected" data-basis="cost">成本</button>
+            <button data-basis="recovery">回款</button>
+          </div>
+        </section>
+
+        <section class="metric-grid" aria-label="核心指标">
+          <article class="metric">
+            <span>总资金占用</span>
+            <strong id="metricCapital">$0</strong>
+            <small id="metricCapitalMeta">0 条明细</small>
+          </article>
+          <article class="metric">
+            <span>正常周转资金</span>
+            <strong id="metricHealthy">$0</strong>
+            <small id="metricHealthyMeta">可售 / 可用库存</small>
+          </article>
+          <article class="metric risk">
+            <span>风险占用资金</span>
+            <strong id="metricRiskCapital">$0</strong>
+            <small id="metricRiskCapitalMeta">不可售 / 锁定 / 长库龄</small>
+          </article>
+          <article class="metric transit">
+            <span>在途资金</span>
+            <strong id="metricTransit">$0</strong>
+            <small id="metricTransitMeta">在途 / 入库中 / 计划入库</small>
+          </article>
+          <article class="metric">
+            <span>预计仓储费</span>
+            <strong id="metricStorage">$0</strong>
+            <small>未来 30 天</small>
+          </article>
+          <article class="metric">
+            <span>损耗现金</span>
+            <strong id="metricLoss">$0</strong>
+            <small id="metricLossMeta">0 个风险项</small>
+          </article>
+        </section>
+
+        <section class="view-panel is-active" data-panel="overview">
+          <section class="route-board" aria-label="资金路线图">
+            <div class="route-head">
+              <div>
+                <h2>资金路线</h2>
+                <span id="routeMeta">0 条明细</span>
+              </div>
+              <div class="route-basis" id="routeBasis">成本口径</div>
+            </div>
+            <div id="chartFilterBar" class="chart-filter-bar" hidden>
+              <span id="chartFilterText">当前钻取：全部</span>
+              <button id="clearChartFilter" type="button">清除</button>
+            </div>
+            <div id="routeFlow" class="route-flow"></div>
+            <div class="route-chart-grid">
+              <article class="route-chart-card">
+                <div class="route-chart-head">
+                  <h3>状态拆分</h3>
+                  <span id="capitalDonutMeta">0 条</span>
+                </div>
+                <div class="route-chart-body">
+                  <div id="capitalDonutRing" class="route-donut" role="img" aria-label="资金状态环形图">
+                    <div class="route-donut-center">
+                      <strong id="capitalDonutCenter">$0</strong>
+                      <small>总占用</small>
+                    </div>
+                  </div>
+                  <div id="capitalDonutLegend" class="route-legend"></div>
+                </div>
+              </article>
+              <article class="route-chart-card">
+                <div class="route-chart-head">
+                  <h3>来源拆分</h3>
+                  <span id="warehouseDonutMeta">0 类</span>
+                </div>
+                <div class="route-chart-body">
+                  <div id="warehouseDonutRing" class="route-donut" role="img" aria-label="仓库来源金额环形图">
+                    <div class="route-donut-center">
+                      <strong id="warehouseDonutCenter">$0</strong>
+                      <small>仓库</small>
+                    </div>
+                  </div>
+                  <div id="warehouseDonutLegend" class="route-legend"></div>
+                </div>
+              </article>
+              <article class="route-chart-card">
+                <div class="route-chart-head">
+                  <h3>关注拆分</h3>
+                  <span id="riskDonutMeta">0 类</span>
+                </div>
+                <div class="route-chart-body">
+                  <div id="riskDonutRing" class="route-donut" role="img" aria-label="关注口径金额环形图">
+                    <div class="route-donut-center">
+                      <strong id="riskDonutCenter">$0</strong>
+                      <small>关注</small>
+                    </div>
+                  </div>
+                  <div id="riskDonutLegend" class="route-legend"></div>
+                </div>
+              </article>
+            </div>
+          </section>
+          <div class="split">
+            <section class="panel">
+              <div class="panel-head">
+                <h2>资金分布</h2>
+                <span id="chartTotal">$0</span>
+              </div>
+              <div id="barChart" class="bar-chart" aria-label="仓库资金分布"></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head">
+                <h2>处理队列</h2>
+                <span id="queueCount">0 项</span>
+              </div>
+              <div id="actionQueue" class="queue"></div>
+            </section>
+          </div>
+          <section class="panel structure-panel">
+            <div class="panel-head">
+              <h2>资金结构</h2>
+              <span id="structureMeta">按库存状态和风险口径拆分</span>
+            </div>
+            <div id="structureGrid" class="structure-grid"></div>
+          </section>
+        </section>
+
+        <section class="view-panel" data-panel="capital">
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <h2>仓库占用资金明细</h2>
+              <span id="capitalRows">0 行</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>仓库</th>
+                    <th>类型</th>
+                    <th>SKU</th>
+                    <th>FNSKU</th>
+                    <th>库存状态</th>
+                    <th>数量</th>
+                    <th>单位成本</th>
+                    <th>占用金额</th>
+                    <th>库龄</th>
+                    <th>风险口径</th>
+                    <th>预计仓储费</th>
+                  </tr>
+                </thead>
+                <tbody id="capitalTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view-panel" data-panel="loss">
+          <section class="panel table-panel">
+            <div class="panel-head">
+              <h2>仓库损耗现金明细</h2>
+              <span id="lossRows">0 行</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>日期</th>
+                    <th>仓库</th>
+                    <th>SKU</th>
+                    <th>损耗类型</th>
+                    <th>数量</th>
+                    <th>库存成本</th>
+                    <th>处理费用</th>
+                    <th>预计回款</th>
+                    <th>净损失</th>
+                    <th>动作</th>
+                  </tr>
+                </thead>
+                <tbody id="lossTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view-panel" data-panel="formula">
+          <div class="formula-grid">
+            <section class="panel formula-panel">
+              <h2>数据来源</h2>
+              <dl>
+                <dt>本地仓 / 海外仓库存</dt>
+                <dd><code>dwd_lingxing_inventory_details</code>，取表内最新 <code>date</code>，只取 <code>product_total &gt; 0</code> 的行。</dd>
+                <dt>FBA库存</dt>
+                <dd><code>dwd_lingxing_fba_warehouse_detail</code>，取表内最新 <code>date</code>，只取 <code>total &gt; 0</code> 的行。</dd>
+                <dt>FBA台账损耗</dt>
+                <dd><code>dwd_lingxing_inventory_ledger_summary_incr</code>，取表内最新 <code>date</code>，只取 <code>lost / damaged / disposed</code> 非 0 的行。</dd>
+                <dt>仓库维表</dt>
+                <dd><code>dwd_lingxing_sc_warehouse</code>，取最新日期后按 <code>wid</code> 关联仓库名称、仓库类型、国家。</dd>
+              </dl>
+            </section>
+            <section class="panel formula-panel">
+              <h2>单位成本</h2>
+              <dl>
+                <dt>本地仓 / 海外仓</dt>
+                <dd>单位成本优先级：<code>stock_price</code> → <code>stock_cost</code> → <code>purchase_price</code> → <code>stock_cost_total / product_total</code>。</dd>
+                <dt>FBA</dt>
+                <dd>FBA按每个状态自己的金额字段反推：<code>状态金额 / 状态数量</code>。例如 <code>afn_fulfillable_quantity_price / afn_fulfillable_quantity</code>。</dd>
+                <dt>成本缺失</dt>
+                <dd>数量大于 0 且 <code>unitCost = 0</code> 且 <code>amount = 0</code> 时标记为“成本缺失”，不静默当作真实 0 成本。</dd>
+              </dl>
+            </section>
+            <section class="panel formula-panel">
+              <h2>占用资金</h2>
+              <dl>
+                <dt>本地仓 / 海外仓金额</dt>
+                <dd><code>状态数量 × 单位成本</code>。状态包括：可用 <code>product_valid_num</code>、锁定 <code>product_lock_num</code>、次品 <code>product_bad_num</code>、待检 <code>product_qc_num</code>、调拨在途 <code>product_onway</code>。</dd>
+                <dt>FBA金额</dt>
+                <dd>直接取每个状态金额字段。状态包括：FBA可售、待调仓、调仓中、待发货、FBM可售、FBA不可售、计划入库、在途、入库中、调查中。</dd>
+                <dt>总资金占用</dt>
+                <dd>当前筛选范围内所有占用明细的 <code>amount</code> 求和。</dd>
+                <dt>预计仓储费</dt>
+                <dd>FBA按金额占比分摊：<code>estimated_storage_cost_next_month × 状态金额 / total_price</code>；本地仓/海外仓当前为 0。</dd>
+              </dl>
+            </section>
+            <section class="panel formula-panel">
+              <h2>资金结构</h2>
+              <dl>
+                <dt>正常周转资金</dt>
+                <dd>状态包含“可售”或“可用”，且不命中风险占用、在途资金的明细金额。</dd>
+                <dt>风险占用资金</dt>
+                <dd>命中任一条件：成本缺失、库龄 <code>&gt;= 181</code> 天、状态包含“不可售/次品/待检/锁定/预留/调查/待发货”。</dd>
+                <dt>在途资金</dt>
+                <dd>状态包含“在途/入库/计划/待调仓/调仓”的明细金额。</dd>
+                <dt>风险标签</dt>
+                <dd>优先级：成本缺失 → 365天+ → 181天+ → 不可售风险 → 冻结占用 → 在途资金 → 正常周转。</dd>
+              </dl>
+            </section>
+            <section class="panel formula-panel">
+              <h2>损耗现金</h2>
+              <dl>
+                <dt>本地仓 / 海外仓静态损耗</dt>
+                <dd>次品损耗：<code>product_bad_num × 单位成本</code>，动作标记为“降本复核”。</dd>
+                <dt>FBA不可售损耗</dt>
+                <dd>取 <code>afn_unsellable_quantity_price</code> 作为库存成本；单位成本为 <code>afn_unsellable_quantity_price / afn_unsellable_quantity</code>，动作标记为“移除测算”。</dd>
+                <dt>台账流水损耗</dt>
+                <dd>丢失、损毁、弃置数量来自 <code>dwd_lingxing_inventory_ledger_summary_incr</code>；单位成本优先用当前占用明细中相同 SKU/FNSKU 的成本。</dd>
+                <dt>净损失</dt>
+                <dd>成本口径：<code>库存成本 + 处理费用</code>；回款口径：<code>库存成本 + 处理费用 - 预计回款</code>。当前处理费用和预计回款字段暂为 0。</dd>
+              </dl>
+            </section>
+            <section class="panel formula-panel">
+              <h2>页面规则</h2>
+              <dl>
+                <dt>筛选范围</dt>
+                <dd>日期、仓库类型、国家、SKU/FNSKU/仓库搜索都会同时作用于占用明细和损耗明细。</dd>
+                <dt>资金分布</dt>
+                <dd>按仓库类型 <code>type</code> 汇总 <code>amount</code>，展示各类型资金占比。</dd>
+                <dt>图表钻取</dt>
+                <dd>资金路线节点、状态拆分、来源拆分、关注拆分都可点击筛选；再次点击同一条件或点击“清除”恢复全部。</dd>
+                <dt>处理队列</dt>
+                <dd>按净损失从高到低排序，展示前 8 条损耗项；净损失 <code>&gt;= 450</code> 为高，<code>&gt;= 180</code> 为中，其余为低。</dd>
+                <dt>导出</dt>
+                <dd>导出当前筛选后的占用明细：日期、仓库、类型、国家、SKU、FNSKU、状态、数量、单位成本、占用金额。</dd>
+              </dl>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -3,7 +3,7 @@ import unittest
 from pmc_agent.agentic_loop import AgenticAction, AgenticDecision, AgenticRunResult, AgenticStep
 from pmc_agent.config import InventoryPolicy
 from pmc_agent.domain import AgentRunResult, ExecutionPlan, PlanStep, TaskRequest, TaskType
-from pmc_agent.response_formatter import build_agent_result_ui, build_agentic_result_ui, format_agent_reply, strip_markdown_tables
+from pmc_agent.response_formatter import _format_sku_diagnosis, build_agent_result_ui, build_agentic_result_ui, format_agent_reply, strip_markdown_tables
 from pmc_agent.tools.inventory import InventoryRiskTool, InventorySnapshotTool
 from tests.fake_control_tower import FakeMainRuleConnector
 
@@ -97,6 +97,97 @@ class ResponseFormatterTests(unittest.TestCase):
         self.assertEqual(len(ui["tables"]), 1)
         self.assertEqual(ui["tables"][0]["id"], "agentic_observation_result")
         self.assertEqual(ui["calculations"], ["可用库存 = 总库存 - 占用"])
+
+    def test_sku_diagnosis_formatter_includes_ai_capability_sections(self):
+        reply = _format_sku_diagnosis(
+            {
+                "material_code": "SKU-1",
+                "overall_status": "断货风险",
+                "risk_level": "high",
+                "suggested_action": "断货：核查在途；冗余：冻结SKU。",
+                "inventory": {"findings": ["FBA可售 10。"]},
+                "sales": {"findings": ["日均需求 4。"]},
+                "stockout": {"findings": ["第 7 天断货。"]},
+                "overstock": {"findings": []},
+                "attribution": ["FBA前端短缺。"],
+                "handling_logic": ["先保供。"],
+                "logistics_plan": [],
+                "replenishment_countdowns": [
+                    {
+                        "name": "补货倒计时1",
+                        "action": "催FBA在途",
+                        "formula": "可售天数1-FBA安全天数-FBA交付天数",
+                        "countdown_days": -11.5,
+                        "status": "已到动作点",
+                    }
+                ],
+                "replenishment_recommendation": {
+                    "sales_control": "控销方面：需要轻控销。",
+                    "summary": "补货方面：加急空运 40件。",
+                    "purchase": {"summary": "采购逻辑：下采购单草稿。", "suggested_purchase_quantity": 40},
+                },
+                "replenishment_cost_comparison": {
+                    "rows": [{"channel": "urgent_air", "channel_label": "加急空运", "suggested_quantity": 40, "unit_shipping_cost_cny": 42.5, "estimated_cost_cny": 1700, "arrival_day": 10}],
+                    "recommendation": "快船总成本最低。",
+                },
+                "root_cause_analysis": [{"cause": "物流/在途转化不及时", "evidence": "在途晚于缺口。", "recommendation": "催上架。"}],
+                "sales_recommendation": {"sales_control": "控销方面：需要轻控销。", "stockout_projection": "预计第 7 天断货。", "ad_and_price_review": "缺少价格曲线。"},
+                "potential_analysis": {"score": 58, "label": "中等潜力，稳态补货", "best_for_sales": "控缺口优先。"},
+                "direction_recommendations": {
+                    "sales": {
+                        "summary": "销售方向：中等潜力，稳态补货。",
+                        "sales_potential": {"score": 58, "label": "中等潜力，稳态补货", "weekly_sales_ad_ratio": 0.5, "sales_curve": "周度销量曲线上升。"},
+                        "sales_performance": {
+                            "actual_sales": 130,
+                            "review_start_date": "2026-06-01",
+                            "review_end_date": "2026-06-30",
+                            "sales_curve": "周度销量连续上升。",
+                            "sales_anomalies": [{"label": "销量持续增加", "reason": "最近 3 周销量连续上升。"}],
+                        },
+                        "stockout_and_sales_control": {"stockout_window": "预计第 7 天开始断货。", "control_quantity": 25, "control_days": 3, "recommendation": "控销方面：控 25 件。"},
+                        "forecast_accuracy": {
+                            "forecast_quantity": 100,
+                            "actual_sales": 130,
+                            "variance_percent": 30,
+                            "recommendation": "销售预测：建议提高预测。",
+                            "forecast_anomalies": [{"label": "预估异常", "reason": "前月对当前月预估偏差 30.0%。"}],
+                        },
+                        "skill_placeholders": [{"name": "sales_control_placeholder"}],
+                    },
+                    "logistics": {
+                        "summary": "物流方向：检测到在途异常。",
+                        "detected_anomalies": [{"cause": "物流/在途转化不及时", "evidence": "在途晚于缺口。", "recommendation": "催上架。"}],
+                        "checks": ["检查 FBA 接收。"],
+                    },
+                    "plan": {
+                        "summary": "计划方向：补货。",
+                        "inventory_replenishment": {
+                            "total_replenishment_quantity": 40,
+                            "purchase": {"summary": "采购逻辑：下采购单草稿。", "suggested_purchase_quantity": 40},
+                            "methods": [{"channel_label": "加急空运", "suggested_quantity": 40, "arrival_day": 10}],
+                        },
+                        "cost_comparison": {"recommendation": "快船总成本最低。"},
+                        "skill_placeholders": [{"name": "purchase_order_placeholder"}],
+                    },
+                },
+                "external_action_skills": [{"name": "purchase_order_placeholder", "owner": "采购", "implemented": False, "description": "记录采购建议草稿。"}],
+                "remedies": [],
+            }
+        )
+
+        self.assertIn("**销售方向**", reply)
+        self.assertIn("**物流方向**", reply)
+        self.assertIn("**计划方向**", reply)
+        self.assertIn("**归因**", reply)
+        self.assertIn("物流/在途转化不及时", reply)
+        self.assertIn("控销 25 件 / 3 天", reply)
+        self.assertIn("销售预测：建议提高预测", reply)
+        self.assertIn("销量持续增加", reply)
+        self.assertIn("前月对当前月预估偏差 30.0%", reply)
+        self.assertIn("purchase_order_placeholder", reply)
+        self.assertNotIn("**当前SKU建议**", reply)
+        self.assertNotIn("**补货倒计时与采购逻辑**", reply)
+        self.assertNotIn("**SKU潜力分析**", reply)
 
 
 if __name__ == "__main__":
