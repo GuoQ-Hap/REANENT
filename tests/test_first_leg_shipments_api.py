@@ -19,6 +19,7 @@ class FakeFirstLegConnector:
     def get_first_leg_shipment_rows(self, material_codes, latest_only=True, limit=200):
         self.calls.append(
             {
+                "method": "identity",
                 "material_codes": material_codes,
                 "latest_only": latest_only,
                 "limit": limit,
@@ -43,6 +44,40 @@ class FakeFirstLegConnector:
                 "ship_num": 40,
                 "in_transit_qty": 40,
             }
+        ]
+
+    def get_first_leg_shipment_rows_by_inbound_number(self, warehouse_inbound_numbers, latest_only=True, limit=None):
+        self.calls.append(
+            {
+                "method": "inbound_number",
+                "warehouse_inbound_numbers": warehouse_inbound_numbers,
+                "latest_only": latest_only,
+                "limit": limit,
+            }
+        )
+        return [
+            {
+                "source_relation": "first_leg_inbound",
+                "detail_source_table": "feishu_first_leg_shipment_records",
+                "warehouse_inbound_number": "INB-001",
+                "ship_id": "FBA19GXWJXN8",
+                "package_id": "FBA19GXWJXN8",
+                "estimated_delivery_time": "2026-08-12",
+                "current_shipping_status": "WORKING",
+                "ship_num": 10,
+                "total_item_count": 10,
+            },
+            {
+                "source_relation": "fba_shipment_confirmation",
+                "detail_source_table": "dwd_lingxing_fba_report_shipment_detail_incr",
+                "warehouse_inbound_number": "INB-001",
+                "ship_id": "FBA19GXVGZ27",
+                "package_id": "FBA19GXVGZ27",
+                "fnsku": "X003VX0S2T",
+                "estimated_delivery_time": "2026-08-12",
+                "detail_status": "WORKING",
+                "ship_num": 10,
+            },
         ]
 
 
@@ -81,9 +116,41 @@ class FirstLegShipmentsApiTests(unittest.TestCase):
         self.assertIn("feishu_first_leg_shipment_records", payload["source_tables"])
         self.assertEqual(
             {
+                "method": "identity",
                 "material_codes": ["A100", "X001A100"],
                 "latest_only": False,
                 "limit": 500,
+            },
+            connector.calls[0],
+        )
+
+    def test_first_leg_shipments_queries_warehouse_inbound_number(self):
+        connector = FakeFirstLegConnector()
+        api.sku_diagnosis_connector = connector
+        client = TestClient(api.app)
+
+        response = client.get(
+            "/control-tower/first-leg-shipments",
+            params={
+                "warehouse_inbound_number": "INB-001",
+                "latest_only": "false",
+            },
+        )
+
+        self.assertEqual(200, response.status_code)
+        payload = response.json()
+        self.assertEqual(["INB-001"], payload["query"]["warehouse_inbound_numbers"])
+        self.assertEqual([], payload["query"]["material_codes"])
+        self.assertIsNone(payload["query"]["limit"])
+        self.assertEqual(2, payload["row_count"])
+        self.assertEqual("FBA19GXWJXN8", payload["shipments"][0]["ship_id"])
+        self.assertEqual("FBA19GXVGZ27", payload["shipments"][1]["ship_id"])
+        self.assertEqual(
+            {
+                "method": "inbound_number",
+                "warehouse_inbound_numbers": ["INB-001"],
+                "latest_only": False,
+                "limit": None,
             },
             connector.calls[0],
         )

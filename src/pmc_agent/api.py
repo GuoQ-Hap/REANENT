@@ -11,7 +11,11 @@ from pmc_agent.connectors.database import StiDatabaseConnector
 from pmc_agent.control_tower import control_tower_field_decisions, get_control_tower_summary, get_monthly_forecast_review
 from pmc_agent.control_tower_export import build_daily_investigation_workbook, export_filename
 from pmc_agent.control_tower_recommendations import build_recommendation_export_workbook, recommendation_export_filename
-from pmc_agent.control_tower_sku_investigation import build_sku_investigation_export_workbook, sku_investigation_export_filename
+from pmc_agent.control_tower_sku_investigation import (
+    SKU_INVESTIGATION_EXPORT_ROW_LIMIT,
+    build_sku_investigation_export_workbook,
+    sku_investigation_export_filename,
+)
 from pmc_agent.external_integrations.feishu import FeishuWorkflowService
 from pmc_agent.orchestrator import PmcAgent
 from pmc_agent.query_cache import BOTTOM_TABLE_QUERY_CACHE
@@ -253,29 +257,40 @@ if FastAPI:
         msku: str | None = None,
         fnsku: str | None = None,
         asin: str | None = None,
+        warehouse_inbound_number: str | None = None,
         latest_only: bool = True,
-        limit: int = 200,
+        limit: int | None = None,
         refresh: bool = False,
     ) -> dict:
         _require_feature(http_request, "logistics_detail")
         material_codes = _identity_codes(material_code, sku, msku, fnsku, asin)
-        if not material_codes:
-            raise HTTPException(status_code=400, detail="material_code、sku、msku、fnsku、asin 至少需要一个。")
-        bounded_limit = _api_bounded_limit(limit)
+        inbound_numbers = _identity_codes(warehouse_inbound_number)
+        if not material_codes and not inbound_numbers:
+            raise HTTPException(status_code=400, detail="material_code、sku、msku、fnsku、asin、warehouse_inbound_number 至少需要一个。")
         try:
             with _connector_refresh_context(sku_diagnosis_connector, refresh):
-                rows = sku_diagnosis_connector.get_first_leg_shipment_rows(
-                    material_codes=material_codes,
-                    latest_only=latest_only,
-                    limit=bounded_limit,
-                )
+                if inbound_numbers:
+                    effective_limit = _api_optional_limit(limit)
+                    rows = sku_diagnosis_connector.get_first_leg_shipment_rows_by_inbound_number(
+                        warehouse_inbound_numbers=inbound_numbers,
+                        latest_only=latest_only,
+                        limit=effective_limit,
+                    )
+                else:
+                    effective_limit = _api_bounded_limit(limit, default=200)
+                    rows = sku_diagnosis_connector.get_first_leg_shipment_rows(
+                        material_codes=material_codes,
+                        latest_only=latest_only,
+                        limit=effective_limit,
+                    )
         except Exception as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
         return {
             "query": {
                 "material_codes": material_codes,
+                "warehouse_inbound_numbers": inbound_numbers,
                 "latest_only": latest_only,
-                "limit": bounded_limit,
+                "limit": effective_limit,
             },
             "source_tables": [
                 "feishu_first_leg_shipment_records",
@@ -454,7 +469,7 @@ if FastAPI:
         risk_type: list[str] | None = Query(default=None),
         risk_only: bool = False,
         positive_demand: bool = False,
-        max_rows: int = 20000,
+        max_rows: int = SKU_INVESTIGATION_EXPORT_ROW_LIMIT,
     ):
         filters = {
             "country_code": country_code,
@@ -583,12 +598,22 @@ def _query_value_present(value: Any) -> bool:
     return value not in {None, ""}
 
 
-def _api_bounded_limit(limit: int) -> int:
+def _api_bounded_limit(limit: int | None, default: int = 200) -> int:
+    try:
+        value = default if limit is None else int(limit)
+    except (TypeError, ValueError):
+        value = default
+    return max(1, min(value, 500))
+
+
+def _api_optional_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
     try:
         value = int(limit)
     except (TypeError, ValueError):
-        value = 200
-    return max(1, min(value, 500))
+        return None
+    return value if value > 0 else None
 
 
 def _connector_refresh_context(connector: Any, refresh: bool):

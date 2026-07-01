@@ -468,6 +468,310 @@ class StiDatabaseConnector(ConnectorLogMixin):
             )
         return _dedupe_first_leg_rows(rows)[:bounded_limit]
 
+    @_cacheable_bottom_table
+    def get_first_leg_shipment_rows_by_inbound_number(
+        self,
+        warehouse_inbound_numbers: list[str],
+        latest_only: bool = True,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return all first-leg shipment rows under a warehouse inbound number."""
+
+        if not self.config.ready:
+            logger.info("database connector disabled", extra=log_extra("database_connector_disabled"))
+            return []
+        inbound_numbers = [code.strip().upper() for code in warehouse_inbound_numbers if code and code.strip()]
+        inbound_numbers = list(dict.fromkeys(inbound_numbers))
+        if not inbound_numbers:
+            return []
+        effective_limit = _optional_positive_limit(limit)
+        rows: list[dict[str, Any]] = []
+        with self._connect() as conn:
+            rows.extend(self._get_first_leg_rows_from_inbound_number_direct(conn, inbound_numbers, latest_only, effective_limit))
+            rows.extend(self._get_first_leg_rows_from_in_transit_by_inbound_number(conn, inbound_numbers, latest_only, effective_limit))
+            rows.extend(self._get_first_leg_rows_from_fba_detail_by_inbound_number(conn, inbound_numbers, latest_only, effective_limit))
+        deduped_rows = _dedupe_first_leg_rows(rows)
+        return deduped_rows if effective_limit is None else deduped_rows[:effective_limit]
+
+    def _get_first_leg_rows_from_inbound_number_direct(
+        self,
+        conn: Any,
+        inbound_numbers: list[str],
+        latest_only: bool,
+        limit: int | None,
+    ) -> list[dict[str, Any]]:
+        if not inbound_numbers:
+            return []
+        placeholders = ", ".join(["%s"] * len(inbound_numbers))
+        latest_filter = "AND f.date = (SELECT MAX(date) FROM feishu_first_leg_shipment_records)" if latest_only else ""
+        limit_clause = _optional_limit_clause(limit)
+        sql = f"""
+            SELECT DISTINCT
+                'first_leg_inbound' AS source_relation,
+                'feishu_first_leg_shipment_records' AS detail_source_table,
+                '' AS sku,
+                '' AS msku,
+                '' AS fnsku,
+                '' AS asin,
+                '' AS batch_num,
+                f.ship_id AS package_id,
+                NULL AS shipment_time,
+                COALESCE(f.total_item_count, 0) AS ship_num,
+                COALESCE(f.total_item_count, 0) AS in_transit_qty,
+                NULL AS quantity_received,
+                '' AS detail_logistics_provider,
+                '' AS detail_status,
+                f.date AS first_leg_snapshot_date,
+                f.logistics_tracking_number,
+                f.warehouse_inbound_number,
+                f.account_or_shipping_round,
+                f.ship_id,
+                f.refer_id,
+                f.purchase_order_number,
+                f.supplier_ready_time,
+                f.logistics_pickup_time,
+                f.origin_location,
+                f.destination_country,
+                f.logistics_provider,
+                f.shipping_method,
+                f.port_of_loading,
+                f.port_of_discharge,
+                f.destination_warehouse_type,
+                f.destination_warehouse,
+                f.package_count,
+                f.total_item_count,
+                f.packing_list_actual_weight,
+                f.packing_list_volumetric_weight_or_cubic_meters,
+                f.chargeable_weight_kg_or_cbm,
+                f.unit_price,
+                f.total_shipping_cost,
+                f.cost_per_item_rmb,
+                f.estimated_departure_time,
+                f.actual_departure_date,
+                f.estimated_arrival_time,
+                f.actual_arrival_time,
+                f.plan_delivery_time,
+                f.estimated_delivery_time,
+                f.actual_delivery_time,
+                f.delivery_timeliness,
+                f.current_shipping_status,
+                f.exception,
+                f.putaway_warehouse,
+                f.house_bill_of_lading_number,
+                f.container_number,
+                f.shipping_cycle,
+                f.postal_code,
+                f.remarks
+            FROM feishu_first_leg_shipment_records f
+            WHERE UPPER(TRIM(f.warehouse_inbound_number)) IN ({placeholders})
+              {latest_filter}
+            ORDER BY
+                first_leg_snapshot_date DESC,
+                COALESCE(actual_delivery_time, plan_delivery_time, actual_arrival_time, estimated_delivery_time, estimated_arrival_time) DESC
+            {limit_clause}
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(sql, inbound_numbers)
+            return list(cursor.fetchall())
+
+    def _get_first_leg_rows_from_in_transit_by_inbound_number(
+        self,
+        conn: Any,
+        inbound_numbers: list[str],
+        latest_only: bool,
+        limit: int | None,
+    ) -> list[dict[str, Any]]:
+        if not inbound_numbers:
+            return []
+        placeholders = ", ".join(["%s"] * len(inbound_numbers))
+        latest_filter = "AND f.date = (SELECT MAX(date) FROM feishu_first_leg_shipment_records)" if latest_only else ""
+        limit_clause = _optional_limit_clause(limit)
+        sql = f"""
+            SELECT DISTINCT
+                'in_transit_package' AS source_relation,
+                'in_transit_shipment_records' AS detail_source_table,
+                r.sku,
+                r.msku,
+                r.fnsku,
+                '' AS asin,
+                r.batch_num,
+                r.package_id,
+                r.shipment_time,
+                COALESCE(r.ship_num, 0) AS ship_num,
+                COALESCE(r.in_transit_qty, 0) AS in_transit_qty,
+                COALESCE(r.quantity_received, 0) AS quantity_received,
+                r.logistics_provider AS detail_logistics_provider,
+                '' AS detail_status,
+                f.date AS first_leg_snapshot_date,
+                f.logistics_tracking_number,
+                f.warehouse_inbound_number,
+                f.account_or_shipping_round,
+                f.ship_id,
+                f.refer_id,
+                f.purchase_order_number,
+                f.supplier_ready_time,
+                f.logistics_pickup_time,
+                f.origin_location,
+                f.destination_country,
+                f.logistics_provider,
+                f.shipping_method,
+                f.port_of_loading,
+                f.port_of_discharge,
+                f.destination_warehouse_type,
+                f.destination_warehouse,
+                f.package_count,
+                f.total_item_count,
+                f.packing_list_actual_weight,
+                f.packing_list_volumetric_weight_or_cubic_meters,
+                f.chargeable_weight_kg_or_cbm,
+                f.unit_price,
+                f.total_shipping_cost,
+                f.cost_per_item_rmb,
+                f.estimated_departure_time,
+                f.actual_departure_date,
+                f.estimated_arrival_time,
+                f.actual_arrival_time,
+                f.plan_delivery_time,
+                f.estimated_delivery_time,
+                f.actual_delivery_time,
+                f.delivery_timeliness,
+                f.current_shipping_status,
+                f.exception,
+                f.putaway_warehouse,
+                f.house_bill_of_lading_number,
+                f.container_number,
+                f.shipping_cycle,
+                f.postal_code,
+                f.remarks
+            FROM in_transit_shipment_records r
+            JOIN feishu_first_leg_shipment_records f
+              ON UPPER(TRIM(r.package_id)) = UPPER(TRIM(f.ship_id))
+            WHERE UPPER(TRIM(f.warehouse_inbound_number)) IN ({placeholders})
+              AND COALESCE(TRIM(r.package_id), '') <> ''
+              AND COALESCE(TRIM(f.ship_id), '') <> ''
+              {latest_filter}
+            ORDER BY
+                first_leg_snapshot_date DESC,
+                COALESCE(actual_delivery_time, plan_delivery_time, actual_arrival_time, estimated_delivery_time, estimated_arrival_time) DESC
+            {limit_clause}
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(sql, inbound_numbers)
+            return list(cursor.fetchall())
+
+    def _get_first_leg_rows_from_fba_detail_by_inbound_number(
+        self,
+        conn: Any,
+        inbound_numbers: list[str],
+        latest_only: bool,
+        limit: int | None,
+    ) -> list[dict[str, Any]]:
+        if not inbound_numbers:
+            return []
+        rows: list[dict[str, Any]] = []
+        join_paths = (
+            ("fba_shipment_confirmation", "UPPER(TRIM(d.shipment_confirmation_id)) = UPPER(TRIM(f.ship_id))"),
+            ("fba_reference", "UPPER(TRIM(d.amazon_reference_id)) = UPPER(TRIM(f.refer_id))"),
+        )
+        for relation, join_condition in join_paths:
+            remaining = None if limit is None else limit - len(rows)
+            if remaining is not None and remaining <= 0:
+                break
+            rows.extend(
+                self._get_first_leg_rows_from_fba_detail_by_inbound_number_path(
+                    conn,
+                    inbound_numbers,
+                    latest_only,
+                    remaining,
+                    relation,
+                    join_condition,
+                )
+            )
+        return rows
+
+    def _get_first_leg_rows_from_fba_detail_by_inbound_number_path(
+        self,
+        conn: Any,
+        inbound_numbers: list[str],
+        latest_only: bool,
+        limit: int | None,
+        source_relation: str,
+        join_condition: str,
+    ) -> list[dict[str, Any]]:
+        placeholders = ", ".join(["%s"] * len(inbound_numbers))
+        latest_filter = "AND f.date = (SELECT MAX(date) FROM feishu_first_leg_shipment_records)" if latest_only else ""
+        limit_clause = _optional_limit_clause(limit)
+        sql = f"""
+            SELECT DISTINCT
+                '{source_relation}' AS source_relation,
+                'dwd_lingxing_fba_report_shipment_detail_incr' AS detail_source_table,
+                d.sku,
+                d.msku,
+                d.fnsku,
+                d.asin,
+                '' AS batch_num,
+                d.shipment_confirmation_id AS package_id,
+                d.shiping_time AS shipment_time,
+                COALESCE(d.quantity, 0) AS ship_num,
+                NULL AS in_transit_qty,
+                NULL AS quantity_received,
+                '' AS detail_logistics_provider,
+                d.status AS detail_status,
+                f.date AS first_leg_snapshot_date,
+                f.logistics_tracking_number,
+                f.warehouse_inbound_number,
+                f.account_or_shipping_round,
+                f.ship_id,
+                f.refer_id,
+                f.purchase_order_number,
+                f.supplier_ready_time,
+                f.logistics_pickup_time,
+                f.origin_location,
+                f.destination_country,
+                f.logistics_provider,
+                f.shipping_method,
+                f.port_of_loading,
+                f.port_of_discharge,
+                f.destination_warehouse_type,
+                f.destination_warehouse,
+                f.package_count,
+                f.total_item_count,
+                f.packing_list_actual_weight,
+                f.packing_list_volumetric_weight_or_cubic_meters,
+                f.chargeable_weight_kg_or_cbm,
+                f.unit_price,
+                f.total_shipping_cost,
+                f.cost_per_item_rmb,
+                f.estimated_departure_time,
+                f.actual_departure_date,
+                f.estimated_arrival_time,
+                f.actual_arrival_time,
+                f.plan_delivery_time,
+                f.estimated_delivery_time,
+                f.actual_delivery_time,
+                f.delivery_timeliness,
+                f.current_shipping_status,
+                f.exception,
+                f.putaway_warehouse,
+                f.house_bill_of_lading_number,
+                f.container_number,
+                f.shipping_cycle,
+                f.postal_code,
+                f.remarks
+            FROM dwd_lingxing_fba_report_shipment_detail_incr d
+            JOIN feishu_first_leg_shipment_records f
+              ON {join_condition}
+            WHERE UPPER(TRIM(f.warehouse_inbound_number)) IN ({placeholders})
+              {latest_filter}
+            ORDER BY
+                first_leg_snapshot_date DESC,
+                COALESCE(actual_delivery_time, plan_delivery_time, actual_arrival_time, estimated_delivery_time, estimated_arrival_time) DESC
+            {limit_clause}
+        """
+        with conn.cursor() as cursor:
+            cursor.execute(sql, inbound_numbers)
+            return list(cursor.fetchall())
+
     def _get_first_leg_rows_from_in_transit(
         self,
         conn: Any,
@@ -1797,3 +2101,18 @@ def _bounded_limit(limit: int, spec: QuerySpec | None = None) -> int:
         value = ALL_WAREHOUSE_CATALOG.default_limit
     max_limit = 20000 if spec and spec.intent in {"inventory_control_tower", "inventory_monitoring_export"} else 500
     return max(1, min(value, max_limit))
+
+
+def _optional_positive_limit(limit: int | None) -> int | None:
+    if limit is None:
+        return None
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _optional_limit_clause(limit: int | None) -> str:
+    value = _optional_positive_limit(limit)
+    return "" if value is None else f"LIMIT {value}"

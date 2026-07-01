@@ -1682,6 +1682,198 @@ button.inventory-flow-stage:hover,
   font-size: 12px;
 }
 
+.warehouse-first-leg-lookup {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  background: rgba(2, 22, 31, 0.48);
+  border: 1px solid rgba(35, 232, 255, 0.16);
+}
+
+.warehouse-first-leg-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.warehouse-first-leg-head strong {
+  display: block;
+  color: #f3ffff;
+  font-size: 15px;
+}
+
+.warehouse-first-leg-head p {
+  margin: 5px 0 0;
+  color: #8abfc8;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.warehouse-first-leg-head > span {
+  flex: 0 0 auto;
+  color: #6fa8b2;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 11px;
+}
+
+.warehouse-first-leg-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 108px;
+  gap: 10px;
+  align-items: center;
+}
+
+.warehouse-first-leg-input {
+  min-height: 40px;
+}
+
+.warehouse-first-leg-stats {
+  padding: 0;
+}
+
+.warehouse-first-leg-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.warehouse-first-leg-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px;
+  background: rgba(1, 18, 25, 0.46);
+  border: 1px solid rgba(35, 232, 255, 0.16);
+}
+
+.warehouse-first-leg-card-head,
+.warehouse-first-leg-card-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.warehouse-first-leg-card-head > div {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.warehouse-first-leg-card span {
+  width: fit-content;
+  padding: 2px 7px;
+  color: #fff7b8;
+  background: rgba(255, 201, 97, 0.1);
+  border: 1px solid rgba(255, 201, 97, 0.22);
+  font-size: 12px;
+}
+
+.warehouse-first-leg-card strong {
+  overflow: hidden;
+  color: #f5ffff;
+  font-size: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-first-leg-card-head small {
+  flex: 0 0 auto;
+  color: #fff7b8;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 12px;
+}
+
+.warehouse-first-leg-card p,
+.warehouse-first-leg-card small,
+.warehouse-first-leg-card em {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #8abfc8;
+  font-style: normal;
+}
+
+.warehouse-first-leg-card em {
+  color: #6fa8b2;
+  font-size: 11px;
+}
+
+.warehouse-first-leg-card .warehouse-first-leg-card-head small {
+  color: #fff7b8;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-size: 12px;
+}
+
+.warehouse-first-leg-card-meta em {
+  flex: 1 1 auto;
+  text-align: right;
+}
+
+.warehouse-first-leg-line-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid rgba(35, 232, 255, 0.12);
+}
+
+.warehouse-first-leg-line-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+}
+
+.warehouse-first-leg-line-table th,
+.warehouse-first-leg-line-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(35, 232, 255, 0.09);
+  color: #dffcff;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.warehouse-first-leg-line-table th {
+  color: #8abfc8;
+  background: rgba(35, 232, 255, 0.06);
+  font-weight: 800;
+}
+
+.warehouse-first-leg-line-table td:nth-child(5),
+.warehouse-first-leg-line-table td:nth-child(6),
+.warehouse-first-leg-line-table td:nth-child(7) {
+  color: #f5ffff;
+  font-family: Consolas, "Microsoft YaHei", monospace;
+  font-weight: 800;
+}
+
+.warehouse-first-leg-line-empty {
+  margin: 0;
+  padding: 10px 12px;
+  color: #8abfc8;
+  background: rgba(2, 22, 31, 0.48);
+  border: 1px solid rgba(35, 232, 255, 0.12);
+}
+
+.warehouse-first-leg-more {
+  justify-self: start;
+  min-height: 32px;
+  padding: 6px 12px;
+  color: #9ef5ff;
+  background: rgba(35, 232, 255, 0.08);
+  border: 1px solid rgba(35, 232, 255, 0.24);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.warehouse-first-leg-more:hover {
+  color: #f5ffff;
+  border-color: rgba(35, 232, 255, 0.48);
+}
+
+.warehouse-first-leg-more-wide {
+  justify-self: stretch;
+}
+
 .pager {
   display: inline-flex;
   align-items: center;
@@ -5623,7 +5815,8 @@ button.risk-rank-row[title] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .sku-first-leg-batches {
+  .sku-first-leg-batches,
+  .warehouse-first-leg-cards {
     grid-template-columns: 1fr;
   }
 
@@ -5637,7 +5830,8 @@ button.risk-rank-row[title] {
   }
 
   .first-leg-query,
-  .first-leg-summary {
+  .first-leg-summary,
+  .warehouse-first-leg-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -5688,6 +5882,8 @@ button.risk-rank-row[title] {
     .sku-first-leg-stats,
     .first-leg-query,
     .first-leg-summary,
+    .warehouse-first-leg-form,
+    .warehouse-first-leg-cards,
     .field-grid {
     grid-template-columns: 1fr;
   }
@@ -6220,6 +6416,68 @@ html[data-theme="light"] .field-item {
   border-radius: 8px;
 }
 
+html[data-theme="light"] .standards-view .panel {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .source-line {
+  color: #386070;
+  border-bottom-color: #d7e0ea;
+}
+
+html[data-theme="light"] .source-line span {
+  color: #386070;
+  font-weight: 800;
+}
+
+html[data-theme="light"] .source-line strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .notes {
+  color: #334155;
+}
+
+html[data-theme="light"] .notes li::marker {
+  color: #2563eb;
+}
+
+html[data-theme="light"] .field-section .section-heading {
+  border-bottom-color: #d7e0ea;
+}
+
+html[data-theme="light"] .field-section .section-heading svg {
+  color: #2563eb;
+}
+
+html[data-theme="light"] .field-item.included {
+  border-left-color: #2563eb;
+}
+
+html[data-theme="light"] .field-item.excluded {
+  background: #fffaf0;
+  border-color: #f8d58a;
+  border-left-color: #d97706;
+}
+
+html[data-theme="light"] .field-item code {
+  color: #287187;
+  font-weight: 800;
+}
+
+html[data-theme="light"] .field-item span {
+  color: #075985;
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  font-weight: 800;
+}
+
+html[data-theme="light"] .field-item.excluded span {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
 html[data-theme="light"] .filter-summary-chip button {
   color: #334155;
   background: #ffffff;
@@ -6378,6 +6636,88 @@ html[data-theme="light"] .warehouse-table tbody tr:hover td {
 html[data-theme="light"] .warehouse-empty {
   color: #475569;
   background: #f8fafc;
+}
+
+html[data-theme="light"] .warehouse-first-leg-lookup {
+  color: #0f172a;
+  background: #ffffff;
+  border-color: #cbd5e1;
+  border-radius: 8px;
+}
+
+html[data-theme="light"] .warehouse-first-leg-head strong,
+html[data-theme="light"] .warehouse-first-leg-card strong {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .warehouse-first-leg-head p,
+html[data-theme="light"] .warehouse-first-leg-head > span,
+html[data-theme="light"] .warehouse-first-leg-card p,
+html[data-theme="light"] .warehouse-first-leg-card small,
+html[data-theme="light"] .warehouse-first-leg-card em {
+  color: #475569;
+}
+
+html[data-theme="light"] .warehouse-first-leg-card {
+  background: #f8fbff;
+  border-color: #cbd5e1;
+  border-radius: 8px;
+}
+
+html[data-theme="light"] .warehouse-first-leg-card span {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+html[data-theme="light"] .warehouse-first-leg-card-head small {
+  color: #92400e;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-wrap {
+  border-color: #cbd5e1;
+  border-radius: 6px;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-table {
+  background: #ffffff;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-table th {
+  color: #1e293b;
+  background: #e9eef5;
+  border-bottom-color: #cbd5e1;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-table td {
+  color: #0f172a;
+  border-bottom-color: #d7e0ea;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-table td:nth-child(5),
+html[data-theme="light"] .warehouse-first-leg-line-table td:nth-child(6),
+html[data-theme="light"] .warehouse-first-leg-line-table td:nth-child(7) {
+  color: #0f172a;
+}
+
+html[data-theme="light"] .warehouse-first-leg-line-empty {
+  color: #475569;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  border-radius: 6px;
+}
+
+html[data-theme="light"] .warehouse-first-leg-more {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #93c5fd;
+  border-radius: 6px;
+}
+
+html[data-theme="light"] .warehouse-first-leg-more:hover {
+  color: #1e3a8a;
+  background: #dbeafe;
+  border-color: #60a5fa;
 }
 
 html[data-theme="light"] .bar-track,

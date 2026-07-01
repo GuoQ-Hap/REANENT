@@ -18,6 +18,7 @@ import {
   Moon,
   Plane,
   RefreshCw,
+  Search,
   ShieldAlert,
   Ship,
   Sun,
@@ -27,11 +28,30 @@ import {
 } from "lucide-react";
 import "./styles.css";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const THEME_STORAGE_KEY = "pmc-control-tower-theme";
+const SKU_INVESTIGATION_EXPORT_LIMIT = 500;
+const WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT = 8;
+const WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT = 8;
 
 function apiFetch(url, options = {}) {
   return fetch(url, { ...options, credentials: "include" });
+}
+
+async function apiErrorMessage(response) {
+  try {
+    const payload = await response.clone().json();
+    if (typeof payload?.detail === "string") return payload.detail;
+    if (Array.isArray(payload?.detail)) return payload.detail.map((item) => item?.msg || String(item)).join("；");
+  } catch {
+    // Fall through to plain text response bodies.
+  }
+  try {
+    const text = await response.clone().text();
+    return text.trim().slice(0, 200);
+  } catch {
+    return "";
+  }
 }
 
 function initialTheme() {
@@ -577,15 +597,20 @@ function App() {
   };
 
   const downloadSkuInvestigationExcel = async () => {
-    setSkuInvestigationExporting(true);
     setError("");
+    const investigationCount = Number(summary?.pagination?.total_count ?? filteredItems.length);
+    if (investigationCount > SKU_INVESTIGATION_EXPORT_LIMIT) {
+      setError(`当前筛选命中 ${formatNumber(investigationCount)} 条，SKU排查最多支持 ${formatNumber(SKU_INVESTIGATION_EXPORT_LIMIT)} 条，请缩小筛选条件后再导出。`);
+      return;
+    }
+    setSkuInvestigationExporting(true);
     try {
       const params = new URLSearchParams();
       appendActiveFilters(params, filters);
-      params.set("max_rows", "20000");
+      params.set("max_rows", String(SKU_INVESTIGATION_EXPORT_LIMIT));
       const response = await apiFetch(`${API_BASE_URL}/control-tower/export/sku-investigation?${params.toString()}`);
       if (response.status === 403) throw new Error("当前账号没有导出权限");
-      if (!response.ok) throw new Error(`导出失败 ${response.status}`);
+      if (!response.ok) throw new Error((await apiErrorMessage(response)) || `导出失败 ${response.status}`);
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") || "";
       const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/)?.[1];
@@ -1594,8 +1619,33 @@ const WAREHOUSE_STAGE_OPTIONS = [
 ];
 
 function WarehouseDetailPanel({ summary, activeStage, onStageChange }) {
+  const [inboundNumber, setInboundNumber] = useState("");
+  const [lookupResult, setLookupResult] = useState(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState("");
   const details = WAREHOUSE_STAGE_OPTIONS.map((option) => buildWarehouseStageDetail(summary, option.id));
   const activeDetail = details.find((detail) => detail.id === activeStage) || details[0];
+  const handleInboundLookup = async (event) => {
+    event.preventDefault();
+    const code = inboundNumber.trim();
+    if (!code) {
+      setLookupError("请输入头程进仓编号。");
+      setLookupResult(null);
+      return;
+    }
+    setLookupLoading(true);
+    setLookupError("");
+    try {
+      const payload = await fetchFirstLegShipmentsByInboundNumber(code);
+      setLookupResult(payload);
+    } catch (error) {
+      setLookupResult(null);
+      setLookupError(error instanceof Error ? error.message : "头程进仓编号查询失败");
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   return (
     <section className="warehouse-detail-section">
       <div className="warehouse-detail-head">
@@ -1649,6 +1699,14 @@ function WarehouseDetailPanel({ summary, activeStage, onStageChange }) {
       </div>
 
       <WarehouseInventoryTable rows={activeDetail.warehouseRows} title={activeDetail.tableTitle} />
+      <WarehouseFirstLegLookup
+        value={inboundNumber}
+        onChange={setInboundNumber}
+        onSubmit={handleInboundLookup}
+        loading={lookupLoading}
+        error={lookupError}
+        result={lookupResult}
+      />
     </section>
   );
 }
@@ -1811,6 +1869,277 @@ function WarehouseInventoryTable({ rows, title }) {
       )}
     </div>
   );
+}
+
+function WarehouseFirstLegLookup({ value, onChange, onSubmit, loading, error, result }) {
+  const rows = Array.isArray(result?.shipments) ? result.shipments : [];
+  const shipmentGroups = useMemo(() => groupFirstLegRowsByShipment(rows), [rows]);
+  const stats = summarizeWarehouseInboundShipments(shipmentGroups, rows, result?.query?.warehouse_inbound_numbers?.[0] || value);
+  const hasSearched = Boolean(result || error || loading);
+  const [showAllShipments, setShowAllShipments] = useState(false);
+  const [expandedLineKeys, setExpandedLineKeys] = useState(() => new Set());
+  const visibleShipmentGroups = showAllShipments
+    ? shipmentGroups
+    : shipmentGroups.slice(0, WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT);
+  const hiddenShipmentCount = Math.max(0, shipmentGroups.length - WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT);
+
+  useEffect(() => {
+    setShowAllShipments(false);
+    setExpandedLineKeys(new Set());
+  }, [result]);
+
+  const toggleShipmentLines = useCallback((key) => {
+    setExpandedLineKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
+
+  return (
+    <section className="warehouse-first-leg-lookup">
+      <div className="warehouse-first-leg-head">
+        <div>
+          <strong>头程进仓编号查询</strong>
+          <p>输入头程进仓编号，查询该进仓编号下关联的 FBA 货件、数量、状态和预计到货。</p>
+        </div>
+        <span>feishu_first_leg_shipment_records</span>
+      </div>
+      <form className="warehouse-first-leg-form" onSubmit={onSubmit}>
+        <label className="input-wrap warehouse-first-leg-input">
+          <Search size={16} />
+          <input
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="输入头程进仓编号"
+          />
+        </label>
+        <button className="primary-button" type="submit" disabled={loading}>
+          {loading ? "查询中" : "查询"}
+        </button>
+      </form>
+      {error && <p className="sku-first-leg-error">{error}</p>}
+      {hasSearched && !error && (
+        <>
+          <div className="sku-first-leg-stats warehouse-first-leg-stats">
+            <div>
+              <span>进仓编号</span>
+              <strong>{stats.inboundNumber || "-"}</strong>
+            </div>
+            <div>
+              <span>货件数</span>
+              <strong>{loading ? "读取中" : formatNumber(stats.shipmentCount)}</strong>
+            </div>
+            <div>
+              <span>货件数量</span>
+              <strong>{formatNumber(stats.quantity)}</strong>
+            </div>
+            <div>
+              <span>最近到货</span>
+              <strong>{formatDateOrDash(stats.nextArrival)}</strong>
+            </div>
+          </div>
+          {!loading && shipmentGroups.length === 0 && (
+            <p className="sku-first-leg-empty">当前进仓编号暂无可匹配的头程货件信息。</p>
+          )}
+          {shipmentGroups.length > 0 && (
+            <div className="warehouse-first-leg-cards">
+              {visibleShipmentGroups.map((shipment) => {
+                const linesExpanded = expandedLineKeys.has(shipment.key);
+                const visibleLines = linesExpanded
+                  ? shipment.lineItems
+                  : shipment.lineItems.slice(0, WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT);
+                const hiddenLineCount = Math.max(0, shipment.lineItems.length - WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT);
+                return (
+                  <article className="warehouse-first-leg-card" key={shipment.key}>
+                    <div className="warehouse-first-leg-card-head">
+                      <div>
+                        <span>{firstLegRelationLabel(shipment.relation)}</span>
+                        <strong>{shipment.shipmentId || "-"}</strong>
+                      </div>
+                      <small>{formatNumber(shipment.lineItems.length)} 个SKU明细 / {formatNumber(shipment.quantity)} 件</small>
+                    </div>
+                    <div className="warehouse-first-leg-card-meta">
+                      <p>预计到货 {formatDateOrDash(shipment.arrivalDate)}</p>
+                      <p>状态 {shipment.status || "-"}</p>
+                      {shipment.fnskus.length > 0 && <em>关联标识 {formatNumber(shipment.fnskus.length)} 个</em>}
+                    </div>
+                    {shipment.lineItems.length > 0 ? (
+                      <>
+                        <div className="warehouse-first-leg-line-wrap">
+                          <table className="warehouse-first-leg-line-table">
+                            <thead>
+                              <tr>
+                                <th>SKU</th>
+                                <th>MSKU</th>
+                                <th>FNSKU</th>
+                                <th>ASIN</th>
+                                <th>数量</th>
+                                <th>已收</th>
+                                <th>在途</th>
+                                <th>状态</th>
+                                <th>来源</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {visibleLines.map((line) => (
+                                <tr key={line.key}>
+                                  <td>{line.sku || "-"}</td>
+                                  <td>{line.msku || "-"}</td>
+                                  <td>{line.fnsku || "-"}</td>
+                                  <td>{line.asin || "-"}</td>
+                                  <td>{formatNumber(line.quantity)}</td>
+                                  <td>{formatNumber(line.received)}</td>
+                                  <td>{formatNumber(line.inTransit)}</td>
+                                  <td>{line.status || "-"}</td>
+                                  <td>{firstLegRelationLabel(line.relation)}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {shipment.lineItems.length > WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT && (
+                          <button
+                            className="warehouse-first-leg-more"
+                            type="button"
+                            onClick={() => toggleShipmentLines(shipment.key)}
+                          >
+                            {linesExpanded ? "收起SKU明细" : `展开全部SKU明细（还有 ${formatNumber(hiddenLineCount)} 行）`}
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <p className="warehouse-first-leg-line-empty">当前货件未关联到 SKU 明细，只能看到头程货件总量。</p>
+                    )}
+                  </article>
+                );
+              })}
+              {shipmentGroups.length > WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT && (
+                <button
+                  className="warehouse-first-leg-more warehouse-first-leg-more-wide"
+                  type="button"
+                  onClick={() => setShowAllShipments((current) => !current)}
+                >
+                  {showAllShipments ? "收起货件" : `展开全部货件（还有 ${formatNumber(hiddenShipmentCount)} 个）`}
+                </button>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function groupFirstLegRowsByShipment(rows = []) {
+  const groups = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+    const shipmentId = String(row.ship_id || row.package_id || row.refer_id || row.logistics_tracking_number || `shipment-${index + 1}`).trim();
+    const key = shipmentId || `shipment-${index + 1}`;
+    const current = groups.get(key) || {
+      key,
+      shipmentId,
+      relation: row.source_relation || "",
+      quantity: 0,
+      arrivalDate: "",
+      status: "",
+      fnskus: [],
+      rows: [],
+    };
+    current.rows.push(row);
+    current.relation = preferredFirstLegRelation(current.relation, row.source_relation);
+    current.quantity = Math.max(current.quantity, firstLegArrivalQuantity(row), numericValue(row.total_item_count), numericValue(row.ship_num));
+    current.arrivalDate = earliestDate([current.arrivalDate, firstLegArrivalDate(row)]);
+    current.status = current.status || row.current_shipping_status || row.detail_status || "";
+    current.fnskus = uniqueStrings([...current.fnskus, row.fnsku, row.sku, row.msku].filter(Boolean));
+    groups.set(key, current);
+  });
+  return Array.from(groups.values()).map((group) => {
+    const lineItems = buildFirstLegShipmentLineItems(group.rows);
+    const detailQuantity = lineItems.reduce((total, line) => total + numericValue(line.quantity), 0);
+    return {
+      ...group,
+      lineItems,
+      quantity: detailQuantity > 0 ? detailQuantity : group.quantity,
+    };
+  }).sort((left, right) =>
+    String(left.arrivalDate || "9999-12-31").localeCompare(String(right.arrivalDate || "9999-12-31"))
+      || String(left.shipmentId).localeCompare(String(right.shipmentId), "zh-Hans-CN")
+  );
+}
+
+function buildFirstLegShipmentLineItems(rows = []) {
+  const lineMap = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+    const sku = String(row.sku || "").trim();
+    const msku = String(row.msku || "").trim();
+    const fnsku = String(row.fnsku || "").trim();
+    const asin = String(row.asin || "").trim();
+    if (!sku && !msku && !fnsku && !asin) return;
+    const key = [sku, msku, fnsku, asin].join("|") || `line-${index + 1}`;
+    const quantity = Math.max(firstLegArrivalQuantity(row), numericValue(row.ship_num), numericValue(row.total_item_count));
+    const current = lineMap.get(key) || {
+      key,
+      sku,
+      msku,
+      fnsku,
+      asin,
+      quantity: 0,
+      received: 0,
+      inTransit: 0,
+      status: "",
+      relation: "",
+      arrivalDate: "",
+    };
+    current.quantity = Math.max(current.quantity, quantity);
+    current.received = Math.max(current.received, numericValue(row.quantity_received));
+    current.inTransit = Math.max(current.inTransit, numericValue(row.in_transit_qty));
+    current.status = current.status || row.detail_status || row.current_shipping_status || "";
+    current.relation = preferredFirstLegRelation(current.relation, row.source_relation);
+    current.arrivalDate = earliestDate([current.arrivalDate, firstLegArrivalDate(row)]);
+    lineMap.set(key, current);
+  });
+  return Array.from(lineMap.values()).sort((left, right) =>
+    String(left.sku || left.msku || left.fnsku || left.asin).localeCompare(String(right.sku || right.msku || right.fnsku || right.asin), "zh-Hans-CN")
+  );
+}
+
+function summarizeWarehouseInboundShipments(groups = [], rows = [], fallbackInboundNumber = "") {
+  const quantity = groups.reduce((total, shipment) => total + numericValue(shipment.quantity), 0);
+  const nextArrival = groups.map((shipment) => shipment.arrivalDate).filter(Boolean).sort()[0] || "";
+  const inboundNumber = String(
+    fallbackInboundNumber
+      || rows.find((row) => row?.warehouse_inbound_number)?.warehouse_inbound_number
+      || ""
+  ).trim();
+  return {
+    inboundNumber,
+    shipmentCount: groups.length,
+    quantity,
+    nextArrival,
+  };
+}
+
+function preferredFirstLegRelation(current = "", next = "") {
+  const priority = {
+    first_leg_inbound: 1,
+    fba_reference: 2,
+    fba_shipment_confirmation: 3,
+    in_transit_package: 4,
+  };
+  return (priority[next] || 0) >= (priority[current] || 0) ? next || current : current;
+}
+
+function earliestDate(values = []) {
+  return values.map(formatFullDate).filter(Boolean).sort()[0] || "";
+}
+
+function uniqueStrings(values = []) {
+  return Array.from(new Set(values.map((value) => String(value || "").trim()).filter(Boolean)));
 }
 
 function SkuFirstLegSummary({ item, shipments = [], loading = false, error = "" }) {
@@ -6146,6 +6475,7 @@ function formatDateOrDash(value) {
 
 function firstLegRelationLabel(value) {
   const labels = {
+    first_leg_inbound: "头程货件",
     in_transit_package: "在途明细",
     fba_shipment_confirmation: "FBA货件",
     fba_reference: "Reference",
@@ -6292,11 +6622,10 @@ async function fetchFirstLegShipments(item) {
   params.set("latest_only", "true");
   params.set("limit", "200");
   const endpoint = `/control-tower/first-leg-shipments?${params.toString()}`;
-  const bases = Array.from(new Set([
-    API_BASE_URL,
-    "http://127.0.0.1:8016",
-    "http://127.0.0.1:8015",
-  ]));
+  const bases = [API_BASE_URL];
+  if (import.meta.env.DEV) {
+    bases.push("http://127.0.0.1:8016", "http://127.0.0.1:8015");
+  }
   const errors = [];
   for (const baseUrl of bases) {
     try {
@@ -6311,6 +6640,36 @@ async function fetchFirstLegShipments(item) {
     }
   }
   throw new Error(`头程批次查询失败：${errors.join("；")}`);
+}
+
+async function fetchFirstLegShipmentsByInboundNumber(warehouseInboundNumber) {
+  const code = String(warehouseInboundNumber || "").trim();
+  if (!code) {
+    return { query: { warehouse_inbound_numbers: [] }, row_count: 0, shipments: [] };
+  }
+  const params = new URLSearchParams();
+  params.set("warehouse_inbound_number", code);
+  params.set("latest_only", "false");
+  const endpoint = `/control-tower/first-leg-shipments?${params.toString()}`;
+  const bases = [API_BASE_URL];
+  if (import.meta.env.DEV) {
+    bases.push("http://127.0.0.1:8016", "http://127.0.0.1:8015");
+  }
+  const errors = [];
+  for (const baseUrl of bases) {
+    try {
+      const response = await fetchWithTimeout(`${baseUrl}${endpoint}`, {}, 20000);
+      if (!response.ok) {
+        const message = response.status === 400 || response.status === 502 ? await apiErrorMessage(response) : "";
+        errors.push(`${baseUrl} ${response.status}${message ? ` ${message}` : ""}`);
+        continue;
+      }
+      return response.json();
+    } catch (error) {
+      errors.push(`${baseUrl} ${error instanceof Error ? error.message : "请求失败"}`);
+    }
+  }
+  throw new Error(`头程进仓编号查询失败：${errors.join("；")}`);
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
