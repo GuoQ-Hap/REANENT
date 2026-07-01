@@ -31,8 +31,7 @@ import "./styles.css";
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const THEME_STORAGE_KEY = "pmc-control-tower-theme";
 const SKU_INVESTIGATION_EXPORT_LIMIT = 500;
-const WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT = 8;
-const WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT = 8;
+const SKU_FIRST_LEG_COLLAPSED_BATCH_COUNT = 5;
 
 function apiFetch(url, options = {}) {
   return fetch(url, { ...options, credentials: "include" });
@@ -1876,29 +1875,6 @@ function WarehouseFirstLegLookup({ value, onChange, onSubmit, loading, error, re
   const shipmentGroups = useMemo(() => groupFirstLegRowsByShipment(rows), [rows]);
   const stats = summarizeWarehouseInboundShipments(shipmentGroups, rows, result?.query?.warehouse_inbound_numbers?.[0] || value);
   const hasSearched = Boolean(result || error || loading);
-  const [showAllShipments, setShowAllShipments] = useState(false);
-  const [expandedLineKeys, setExpandedLineKeys] = useState(() => new Set());
-  const visibleShipmentGroups = showAllShipments
-    ? shipmentGroups
-    : shipmentGroups.slice(0, WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT);
-  const hiddenShipmentCount = Math.max(0, shipmentGroups.length - WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT);
-
-  useEffect(() => {
-    setShowAllShipments(false);
-    setExpandedLineKeys(new Set());
-  }, [result]);
-
-  const toggleShipmentLines = useCallback((key) => {
-    setExpandedLineKeys((current) => {
-      const next = new Set(current);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
 
   return (
     <section className="warehouse-first-leg-lookup">
@@ -1948,85 +1924,58 @@ function WarehouseFirstLegLookup({ value, onChange, onSubmit, loading, error, re
           )}
           {shipmentGroups.length > 0 && (
             <div className="warehouse-first-leg-cards">
-              {visibleShipmentGroups.map((shipment) => {
-                const linesExpanded = expandedLineKeys.has(shipment.key);
-                const visibleLines = linesExpanded
-                  ? shipment.lineItems
-                  : shipment.lineItems.slice(0, WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT);
-                const hiddenLineCount = Math.max(0, shipment.lineItems.length - WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT);
-                return (
-                  <article className="warehouse-first-leg-card" key={shipment.key}>
-                    <div className="warehouse-first-leg-card-head">
-                      <div>
-                        <span>{firstLegRelationLabel(shipment.relation)}</span>
-                        <strong>{shipment.shipmentId || "-"}</strong>
-                      </div>
-                      <small>{formatNumber(shipment.lineItems.length)} 个SKU明细 / {formatNumber(shipment.quantity)} 件</small>
+              {shipmentGroups.map((shipment) => (
+                <article className="warehouse-first-leg-card" key={shipment.key}>
+                  <div className="warehouse-first-leg-card-head">
+                    <div>
+                      <span>{firstLegRelationLabel(shipment.relation)}</span>
+                      <strong>{shipment.shipmentId || "-"}</strong>
                     </div>
-                    <div className="warehouse-first-leg-card-meta">
-                      <p>预计到货 {formatDateOrDash(shipment.arrivalDate)}</p>
-                      <p>状态 {shipment.status || "-"}</p>
-                      {shipment.fnskus.length > 0 && <em>关联标识 {formatNumber(shipment.fnskus.length)} 个</em>}
+                    <small>{formatNumber(shipment.lineItems.length)} 个SKU明细 / {formatNumber(shipment.quantity)} 件</small>
+                  </div>
+                  <div className="warehouse-first-leg-card-meta">
+                    <p>预计到货 {formatDateOrDash(shipment.arrivalDate)}</p>
+                    <p>状态 {shipment.status || "-"}</p>
+                    {shipment.fnskus.length > 0 && <em>关联标识 {formatNumber(shipment.fnskus.length)} 个</em>}
+                  </div>
+                  {shipment.lineItems.length > 0 ? (
+                    <div className="warehouse-first-leg-line-wrap">
+                      <table className="warehouse-first-leg-line-table">
+                        <thead>
+                          <tr>
+                            <th>SKU</th>
+                            <th>MSKU</th>
+                            <th>FNSKU</th>
+                            <th>ASIN</th>
+                            <th>数量</th>
+                            <th>已收</th>
+                            <th>在途</th>
+                            <th>状态</th>
+                            <th>来源</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {shipment.lineItems.map((line) => (
+                            <tr key={line.key}>
+                              <td>{line.sku || "-"}</td>
+                              <td>{line.msku || "-"}</td>
+                              <td>{line.fnsku || "-"}</td>
+                              <td>{line.asin || "-"}</td>
+                              <td>{formatNumber(line.quantity)}</td>
+                              <td>{formatNumber(line.received)}</td>
+                              <td>{formatNumber(line.inTransit)}</td>
+                              <td>{line.status || "-"}</td>
+                              <td>{firstLegRelationLabel(line.relation)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                    {shipment.lineItems.length > 0 ? (
-                      <>
-                        <div className="warehouse-first-leg-line-wrap">
-                          <table className="warehouse-first-leg-line-table">
-                            <thead>
-                              <tr>
-                                <th>SKU</th>
-                                <th>MSKU</th>
-                                <th>FNSKU</th>
-                                <th>ASIN</th>
-                                <th>数量</th>
-                                <th>已收</th>
-                                <th>在途</th>
-                                <th>状态</th>
-                                <th>来源</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {visibleLines.map((line) => (
-                                <tr key={line.key}>
-                                  <td>{line.sku || "-"}</td>
-                                  <td>{line.msku || "-"}</td>
-                                  <td>{line.fnsku || "-"}</td>
-                                  <td>{line.asin || "-"}</td>
-                                  <td>{formatNumber(line.quantity)}</td>
-                                  <td>{formatNumber(line.received)}</td>
-                                  <td>{formatNumber(line.inTransit)}</td>
-                                  <td>{line.status || "-"}</td>
-                                  <td>{firstLegRelationLabel(line.relation)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                        {shipment.lineItems.length > WAREHOUSE_FIRST_LEG_COLLAPSED_LINE_COUNT && (
-                          <button
-                            className="warehouse-first-leg-more"
-                            type="button"
-                            onClick={() => toggleShipmentLines(shipment.key)}
-                          >
-                            {linesExpanded ? "收起SKU明细" : `展开全部SKU明细（还有 ${formatNumber(hiddenLineCount)} 行）`}
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      <p className="warehouse-first-leg-line-empty">当前货件未关联到 SKU 明细，只能看到头程货件总量。</p>
-                    )}
-                  </article>
-                );
-              })}
-              {shipmentGroups.length > WAREHOUSE_FIRST_LEG_COLLAPSED_SHIPMENT_COUNT && (
-                <button
-                  className="warehouse-first-leg-more warehouse-first-leg-more-wide"
-                  type="button"
-                  onClick={() => setShowAllShipments((current) => !current)}
-                >
-                  {showAllShipments ? "收起货件" : `展开全部货件（还有 ${formatNumber(hiddenShipmentCount)} 个）`}
-                </button>
-              )}
+                  ) : (
+                    <p className="warehouse-first-leg-line-empty">当前货件未关联到 SKU 明细，只能看到头程货件总量。</p>
+                  )}
+                </article>
+              ))}
             </div>
           )}
         </>
@@ -2144,6 +2093,7 @@ function uniqueStrings(values = []) {
 
 function SkuFirstLegSummary({ item, shipments = [], loading = false, error = "" }) {
   const rows = Array.isArray(shipments) ? shipments : [];
+  const [showAllBatches, setShowAllBatches] = useState(false);
   const stats = rows.reduce(
     (acc, row) => {
       acc.shipped += numericValue(row.ship_num);
@@ -2156,7 +2106,13 @@ function SkuFirstLegSummary({ item, shipments = [], loading = false, error = "" 
     { shipped: 0, received: 0, inTransit: 0, arrivalDates: [] }
   );
   const nextArrival = stats.arrivalDates.sort()[0] || "";
-  const previewRows = rows.slice(0, 5);
+  const visibleRows = showAllBatches ? rows : rows.slice(0, SKU_FIRST_LEG_COLLAPSED_BATCH_COUNT);
+  const hiddenBatchCount = Math.max(0, rows.length - SKU_FIRST_LEG_COLLAPSED_BATCH_COUNT);
+
+  useEffect(() => {
+    setShowAllBatches(false);
+  }, [item.fnsku]);
+
   return (
     <div className="sku-first-leg-panel">
       <div className="sku-first-leg-stats">
@@ -2181,17 +2137,28 @@ function SkuFirstLegSummary({ item, shipments = [], loading = false, error = "" 
       {!loading && !error && rows.length === 0 && (
         <p className="sku-first-leg-empty">当前 FNSKU 暂无头程批次记录。</p>
       )}
-      {previewRows.length > 0 && (
-        <div className="sku-first-leg-batches">
-          {previewRows.map((row, index) => (
-            <div key={`${row.ship_id || row.package_id || row.refer_id || "shipment"}-${index}`}>
-              <span>{firstLegRelationLabel(row.source_relation)}</span>
-              <strong>{row.ship_id || row.package_id || row.batch_num || "-"}</strong>
-              <small>{formatNumber(firstLegArrivalQuantity(row))} 件 · {formatDateOrDash(firstLegArrivalDate(row))}</small>
-              <small>{row.current_shipping_status || row.detail_status || row.shipping_method || "-"}</small>
-            </div>
-          ))}
-        </div>
+      {visibleRows.length > 0 && (
+        <>
+          <div className="sku-first-leg-batches">
+            {visibleRows.map((row, index) => (
+              <div key={`${row.ship_id || row.package_id || row.refer_id || "shipment"}-${index}`}>
+                <span>{firstLegRelationLabel(row.source_relation)}</span>
+                <strong>{row.ship_id || row.package_id || row.batch_num || "-"}</strong>
+                <small>{formatNumber(firstLegArrivalQuantity(row))} 件 · {formatDateOrDash(firstLegArrivalDate(row))}</small>
+                <small>{row.current_shipping_status || row.detail_status || row.shipping_method || "-"}</small>
+              </div>
+            ))}
+          </div>
+          {rows.length > SKU_FIRST_LEG_COLLAPSED_BATCH_COUNT && (
+            <button
+              className="sku-first-leg-more"
+              type="button"
+              onClick={() => setShowAllBatches((current) => !current)}
+            >
+              {showAllBatches ? "收起头程批次" : `展开全部头程批次（还有 ${formatNumber(hiddenBatchCount)} 个）`}
+            </button>
+          )}
+        </>
       )}
     </div>
   );

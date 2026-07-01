@@ -1854,9 +1854,10 @@ button.inventory-flow-stage:hover,
   border: 1px solid rgba(35, 232, 255, 0.12);
 }
 
-.warehouse-first-leg-more {
+.sku-first-leg-more {
   justify-self: start;
   min-height: 32px;
+  margin-top: 10px;
   padding: 6px 12px;
   color: #9ef5ff;
   background: rgba(35, 232, 255, 0.08);
@@ -1865,13 +1866,9 @@ button.inventory-flow-stage:hover,
   cursor: pointer;
 }
 
-.warehouse-first-leg-more:hover {
+.sku-first-leg-more:hover {
   color: #f5ffff;
   border-color: rgba(35, 232, 255, 0.48);
-}
-
-.warehouse-first-leg-more-wide {
-  justify-self: stretch;
 }
 
 .pager {
@@ -6707,14 +6704,14 @@ html[data-theme="light"] .warehouse-first-leg-line-empty {
   border-radius: 6px;
 }
 
-html[data-theme="light"] .warehouse-first-leg-more {
+html[data-theme="light"] .sku-first-leg-more {
   color: #1d4ed8;
   background: #eff6ff;
   border-color: #93c5fd;
   border-radius: 6px;
 }
 
-html[data-theme="light"] .warehouse-first-leg-more:hover {
+html[data-theme="light"] .sku-first-leg-more:hover {
   color: #1e3a8a;
   background: #dbeafe;
   border-color: #60a5fa;
